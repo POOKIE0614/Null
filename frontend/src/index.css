@@ -1,0 +1,21 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body { @apply bg-void text-white antialiased; font-family: 'Inter', sans-serif; }
+  input, select, textarea { @apply bg-void-100; }
+  *::selection { @apply bg-void-500 bg-opacity-40; }
+}
+
+@layer utilities {
+  .bg-void { background-color: #07060f; }
+  .bg-void-100 { background-color: #0d0c1a; }
+  .bg-void-500 { background-color: #0d0c1a; }
+  .text-void { color: #07060f; }
+  .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .scrollbar-thin { scrollbar-width: thin; scrollbar-color: #252344 #0d0c1a; }
+}
