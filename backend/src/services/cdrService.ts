@@ -67,7 +67,7 @@ class CDRService {
       encryptedData: toHex(ciphertext.raw),
     })
     logger.info(`[CDR] CID sealed uuid=${uuid} tx=${writeTx.slice(0, 18)}...`)
-    return uuid
+    return String(uuid)
   }
 
   async unsealCID(vaultUUID: string): Promise<string> {
@@ -75,7 +75,7 @@ class CDRService {
     logger.info(`[CDR] Unsealing vault uuid=${vaultUUID}`)
 
     const { dataKey, txHash } = await client.consumer.accessCDR({
-      uuid:          vaultUUID,
+      uuid:          Number(vaultUUID),
       accessAuxData: '0x',
       timeoutMs:     120_000,
     })

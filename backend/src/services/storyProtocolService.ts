@@ -6,7 +6,7 @@ import fetch from 'node-fetch'
 import { StoryClient } from '@story-protocol/core-sdk'
 import { createPublicClient, createWalletClient, http } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { IPAsset, License, LicenseType, IStoryService } from '../types'
+import { IPAsset, License, LicenseType, IStoryService, TeamSettings } from '../types'
 import { CONFIG } from '../config/constants'
 import { logger } from '../utils/logger'
 
@@ -101,7 +101,7 @@ class StoryProtocolService implements IStoryService {
         ipMetadataURI: metaUri, ipMetadataHash: metaHash,
         nftMetadataURI: metaUri, nftMetadataHash: metaHash,
       },
-      txOptions: { waitForTransaction: true },
+      txOptions: { waitForTransaction: true } as any,
     })
 
     const ipId   = reg.ipId   as string
@@ -111,7 +111,7 @@ class StoryProtocolService implements IStoryService {
     await client.license.attachLicenseTerms({
       ipId:           ipId as `0x${string}`,
       licenseTermsId: PIL_TERMS[params.licenseType],
-      txOptions:      { waitForTransaction: true },
+      txOptions:      { waitForTransaction: true } as any,
     })
     logger.info(`[Story] PIL terms attached (${params.licenseType})`)
 
@@ -141,7 +141,7 @@ class StoryProtocolService implements IStoryService {
       licensorIpId:   asset.ipId as `0x${string}`,
       receiver:       buyerWallet as `0x${string}`,
       amount:         BigInt(1),
-      txOptions:      { waitForTransaction: true },
+      txOptions:      { waitForTransaction: true } as any,
     })
 
     const txHash    = res.txHash as string

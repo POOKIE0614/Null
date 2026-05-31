@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
-import { IPAsset, License, IStoryService, LicenseType } from '../types'
+import { IPAsset, License, IStoryService, LicenseType, TeamSettings } from '../types'
 import { CONFIG } from '../config/constants'
 import { logger } from '../utils/logger'
 
