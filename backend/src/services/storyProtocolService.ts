@@ -3,7 +3,7 @@ import path from 'path'
 import crypto from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 import fetch from 'node-fetch'
-import { StoryClient } from '@story-protocol/core-sdk'
+import type { StoryClient } from '@story-protocol/core-sdk'
 import { createPublicClient, createWalletClient, http, fallback } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { IPAsset, License, LicenseType, IStoryService, TeamSettings } from '../types'
@@ -32,7 +32,6 @@ const transport = fallback([
 
 const publicClient = createPublicClient({ transport })
 const walletClient = createWalletClient({ account, transport })
-const client       = StoryClient.newClient({ account, transport, chainId: 'aeneid' })
 
 logger.info(`[Story] Wallet: ${account.address}  RPC: ${RPC_URL}`)
 
@@ -84,6 +83,15 @@ async function pinMetadata(content: object, name: string): Promise<string> {
 
 class StoryProtocolService implements IStoryService {
   private db: DB = { ipAssets: {}, licenses: {} }
+  private client: StoryClient | null = null
+
+  private async getClient(): Promise<StoryClient> {
+    if (!this.client) {
+      const { StoryClient } = await import('@story-protocol/core-sdk')
+      this.client = StoryClient.newClient({ account, transport, chainId: 'aeneid' })
+    }
+    return this.client
+  }
 
   constructor() {
     if (CONFIG.STORY_PROVIDER === 'real' && !process.env.STORY_PRIVATE_KEY) {
@@ -110,6 +118,26 @@ class StoryProtocolService implements IStoryService {
     teamSettings?: TeamSettings
   }): Promise<{ ipId: string; txHash: string }> {
 
+    if (CONFIG.STORY_PROVIDER === 'mock') {
+      const mockIpId = `0x${crypto.randomBytes(20).toString('hex')}`
+      const mockTxHash = `0x${crypto.randomBytes(32).toString('hex')}`
+      logger.info(`[Story] [MOCK] Registering IP Asset: "${params.title}" -> ipId=${mockIpId}`)
+      
+      const id = uuidv4()
+      this.db.ipAssets[id] = {
+        id, ipId: mockIpId, txHash: mockTxHash, title: params.title, description: params.description,
+        creatorWallet: params.creatorWallet, mimeType: params.mimeType,
+        originalName: params.originalName, totalSize: params.totalSize,
+        licenseType: params.licenseType, priceUSD: params.priceUSD,
+        locationMapCid: params.locationMapCid, registeredAt: new Date().toISOString(),
+        downloadCount: 0, royaltiesEarned: 0,
+        isTeamIP: params.isTeamIP,
+        teamSettings: params.teamSettings,
+      }
+      this.saveDB()
+      return { ipId: mockIpId, txHash: mockTxHash }
+    }
+
     // Pin IP metadata to IPFS
     const meta = {
       title: params.title, description: params.description,
@@ -130,6 +158,8 @@ class StoryProtocolService implements IStoryService {
     const metaUri  = `${PINATA_GATEWAY}/ipfs/${metaCid}`
 
     logger.info(`[Story] Registering IP: "${params.title}"`)
+
+    const client = await this.getClient()
 
     const reg = await retryWithBackoff(
       () => client.ipAsset.mintAndRegisterIp({
@@ -199,6 +229,22 @@ class StoryProtocolService implements IStoryService {
     if (!asset) throw new Error(`IP asset not found: ${ipAssetId}`)
     if (asset.creatorWallet.toLowerCase() === buyerWallet.toLowerCase())
       throw new Error('Creator cannot purchase own asset')
+
+    if (CONFIG.STORY_PROVIDER === 'mock') {
+      const mockTxHash = `0x${crypto.randomBytes(32).toString('hex')}`
+      const licenseId = uuidv4()
+      this.db.licenses[licenseId] = {
+        id: licenseId, ipAssetId: asset.id, buyerWallet,
+        purchasedAt: new Date().toISOString(), expiresAt: null,
+        txHash: mockTxHash, pricePaid: asset.priceUSD,
+      }
+      this.db.ipAssets[asset.id].royaltiesEarned += asset.priceUSD
+      this.saveDB()
+      logger.info(`[Story] [MOCK] License minted licenseId=${licenseId}`)
+      return { txHash: mockTxHash, licenseId }
+    }
+
+    const client = await this.getClient()
 
     const res = await retryWithBackoff(
       () => client.license.mintLicenseTokens({

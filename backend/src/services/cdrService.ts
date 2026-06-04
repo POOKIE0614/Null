@@ -1,4 +1,4 @@
-import { CDRClient, initWasm, uuidToLabel } from '@piplabs/cdr-sdk'
+import type { CDRClient } from '@piplabs/cdr-sdk'
 import { createPublicClient, createWalletClient, http, toHex, fallback } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { logger } from '../utils/logger'
@@ -81,6 +81,8 @@ class CDRService {
     if (!process.env.STORY_PRIVATE_KEY) {
       throw new Error('[CDR] STORY_PRIVATE_KEY is required when STORY_PROVIDER is real')
     }
+
+    const { CDRClient, initWasm } = await import('@piplabs/cdr-sdk')
     await initWasm()
     logger.info('[CDR] WASM initialised')
 
@@ -138,6 +140,7 @@ class CDRService {
     )
     const cidBytes     = Buffer.from(pinataCid, 'utf8')
 
+    const { uuidToLabel } = await import('@piplabs/cdr-sdk')
     const ciphertext = await client.uploader.encryptDataKey({
       dataKey:      cidBytes,
       globalPubKey,
