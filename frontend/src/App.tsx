@@ -81,6 +81,17 @@ function useGlobalStyles() {
       .btn-press {
         transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
       }
+      
+      /* Void Logo Interactive Styling */
+      .void-logo-hover {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+      }
+      .void-logo-hover:hover {
+        transform: rotate(45deg) scale(1.1);
+      }
     `
     document.head.appendChild(s)
   }, [])
@@ -793,6 +804,43 @@ function WalletButton({ onConnect, onDisconnect }: { onConnect?: (a: string) => 
   )
 }
 
+function VoidLogo({ size = 18, style }: { size?: number; style?: React.CSSProperties }) {
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', ...style }} className="void-logo-hover">
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <defs>
+          <linearGradient id="void-grad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#0066cc" />
+            <stop offset="100%" stopColor="#3388ff" />
+          </linearGradient>
+        </defs>
+        <circle
+          cx="12"
+          cy="12"
+          r="9"
+          stroke="url(#void-grad)"
+          strokeWidth="2.5"
+        />
+        <line
+          x1="6.5"
+          y1="17.5"
+          x2="17.5"
+          y2="6.5"
+          stroke="url(#void-grad)"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        />
+      </svg>
+    </div>
+  )
+}
+
 function Nav({ page, setPage }: { page: string; setPage: (p: string) => void }) {
   const [scrolled, setScrolled] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -819,7 +867,7 @@ function Nav({ page, setPage }: { page: string; setPage: (p: string) => void }) 
       <div style={{ maxWidth: 1024, margin: '0 auto', padding: '0 24px', height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <button onClick={() => { setPage('home'); setMobileMenuOpen(false) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 18, fontWeight: 700, color: '#1d1d1f', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center' }}>
-             <span style={{ marginLeft: 4 }}>NullVault</span>
+            <VoidLogo size={18} style={{ marginRight: 6 }} /> <span>NullVault</span>
           </span>
         </button>
 
@@ -2313,7 +2361,7 @@ function Footer({ setPage }: { setPage: (p: string) => void }) {
         <div className="grid-footer">
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f', letterSpacing: '0.1em' }}> NULLVAULT</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f', letterSpacing: '0.1em', display: 'flex', alignItems: 'center' }}><VoidLogo size={14} style={{ marginRight: 6 }} /> NULLVAULT</span>
             </div>
             <p className="font-body-light" style={{ fontSize: 14, color: '#515154', lineHeight: 1.6, maxWidth: 320 }}>
               Nothing is stored. Everything is preserved. Cryptographically shredded file pieces reside in decentralized storage, verified on-chain.
