@@ -1,7 +1,9 @@
+// @ts-ignore
 import sss from 'shamirs-secret-sharing'
 import { sha256 } from '../utils/crypto'
 import { Fragment } from '../types'
 import { logger } from '../utils/logger'
+
 
 export interface ShamirResult {
   chunks: ShamirChunkResult[]
