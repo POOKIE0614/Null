@@ -148,6 +148,7 @@ async function apiFetch(method: string, path: string, opts: { walletAddress?: st
   const res = await fetch(`${API}${path}`, {
     method,
     headers,
+    cache: 'no-store',
     body: opts.isForm ? (opts.body as FormData) : opts.body ? JSON.stringify(opts.body) : undefined
   })
   let json: { ok: boolean; data: unknown; error?: string }
@@ -1716,6 +1717,10 @@ function VaultPage({
         setStep('done')
         if (phase1.ipAsset) {
           onAssetCreated(phase1.ipAsset)
+          setMyAssets(p => {
+            if (p.some(x => x.id === phase1.ipAsset!.id)) return p
+            return [phase1.ipAsset!, ...p]
+          })
           toast.success(`Registered: "${phase1.ipAsset.title}"!`)
         }
         return
@@ -1763,6 +1768,10 @@ function VaultPage({
       setStep('done')
       if (finalJob.ipAsset) {
         onAssetCreated(finalJob.ipAsset)
+        setMyAssets(p => {
+          if (p.some(x => x.id === finalJob.ipAsset!.id)) return p
+          return [finalJob.ipAsset!, ...p]
+        })
         toast.success(`Registered: "${finalJob.ipAsset.title}"!`)
       }
     } catch (e) {
