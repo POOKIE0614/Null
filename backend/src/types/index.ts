@@ -66,6 +66,7 @@ export interface IPAsset {
   royaltiesEarned: number
   isTeamIP?: boolean
   teamSettings?: TeamSettings
+  lastReshuffledAt?: string
 }
 
 // ── License types ───────────────────────────────────────────────────
@@ -87,6 +88,7 @@ export interface IStorageService {
   fetchFragment(storageId: string): Promise<Buffer>
   storeLocationMap(map: LocationMap): Promise<string>
   fetchLocationMap(cid: string): Promise<LocationMap>
+  unpin?(storageId: string): Promise<void>
 }
 
 export interface IStoryService {
@@ -103,6 +105,12 @@ export interface IStoryService {
     isTeamIP?: boolean
     teamSettings?: TeamSettings
   }): Promise<{ ipId: string; txHash: string }>
+  confirmRegistration(params: {
+    ipId: string; txHash: string; title: string; description: string
+    creatorWallet: string; mimeType: string; originalName: string
+    totalSize: number; licenseType: LicenseType; priceUSD: number
+    locationMapCid: string; isTeamIP?: boolean; teamSettings?: any
+  }): Promise<void>
   verifyLicense(ipAssetId: string, walletAddress: string): Promise<boolean>
   purchaseLicense(ipAssetId: string, buyerWallet: string): Promise<{ txHash: string; licenseId: string }>
 }

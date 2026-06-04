@@ -8,7 +8,7 @@ const PINATA_JWT     = process.env.PINATA_JWT!
 const PINATA_GATEWAY = process.env.PINATA_GATEWAY || 'https://gateway.pinata.cloud'
 const PINATA_API     = 'https://api.pinata.cloud'
 
-if (!PINATA_JWT) throw new Error('PINATA_JWT not set in .env')
+if (CONFIG.ARWEAVE_PROVIDER === 'real' && !PINATA_JWT) throw new Error('PINATA_JWT not set in .env')
 
 async function withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
   let last: Error | undefined
@@ -97,6 +97,19 @@ class PinataStorageService implements IStorageService {
       const map = await res.json() as LocationMap
       logger.debug(`[Pinata] Location map fetched ${cid}`)
       return map
+    })
+  }
+
+  async unpin(storageId: string): Promise<void> {
+    return withRetry(async () => {
+      const res = await fetch(`${PINATA_API}/pinning/unpin/${storageId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${PINATA_JWT}` },
+      })
+      if (!res.ok && res.status !== 404) {
+        throw new Error(`Pinata unpin failed (${res.status}): ${await res.text()}`)
+      }
+      logger.info(`[Pinata] Fragment unpinned/deleted: ${storageId}`)
     })
   }
 }

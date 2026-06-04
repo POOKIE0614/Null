@@ -1,5 +1,6 @@
 import { defineChain } from 'viem'
-import { getDefaultConfig } from '@rainbow-me/rainbowkit'
+import { createConfig, http } from 'wagmi'
+import { injected } from 'wagmi/connectors'
 
 export const storyAeneid = defineChain({
   id: 1513,
@@ -15,9 +16,11 @@ export const storyAeneid = defineChain({
   testnet: true,
 })
 
-export const wagmiConfig = getDefaultConfig({
-  appName: 'NullVault',
-  projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? 'YOUR_WALLETCONNECT_PROJECT_ID',
+export const wagmiConfig = createConfig({
   chains: [storyAeneid],
+  connectors: [injected()],
+  transports: {
+    [storyAeneid.id]: http('https://aeneid.storyrpc.io'),
+  },
   ssr: false,
 })

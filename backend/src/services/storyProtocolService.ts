@@ -4,7 +4,7 @@ import crypto from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 import fetch from 'node-fetch'
 import { StoryClient } from '@story-protocol/core-sdk'
-import { createPublicClient, createWalletClient, http } from 'viem'
+import { createPublicClient, createWalletClient, http, fallback } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { IPAsset, License, LicenseType, IStoryService, TeamSettings } from '../types'
 import { CONFIG } from '../config/constants'
@@ -27,11 +27,44 @@ const PIL_TERMS: Record<LicenseType, bigint> = {
 if (!PRIVATE_KEY) throw new Error('[Story] STORY_PRIVATE_KEY not set')
 
 const account      = privateKeyToAccount(PRIVATE_KEY)
-const publicClient = createPublicClient({ transport: http(RPC_URL) })
-const walletClient = createWalletClient({ account, transport: http(RPC_URL) })
-const client       = StoryClient.newClient({ account, transport: http(RPC_URL), chainId: 'aeneid' })
+const transport = fallback([
+  http(RPC_URL, { timeout: 120000 }),
+  http('https://rpc.ankr.com/story_aeneid_testnet', { timeout: 120000 })
+])
+
+const publicClient = createPublicClient({ transport })
+const walletClient = createWalletClient({ account, transport })
+const client       = StoryClient.newClient({ account, transport, chainId: 'aeneid' })
 
 logger.info(`[Story] Wallet: ${account.address}  RPC: ${RPC_URL}`)
+
+async function retryWithBackoff<T>(fn: () => Promise<T>, description: string, retries = 3, delayMs = 5000): Promise<T> {
+  let lastErr: any
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn()
+    } catch (err: any) {
+      lastErr = err
+      const isRetryable = err.message?.toLowerCase().includes('timeout') ||
+                          err.message?.toLowerCase().includes('took too long') ||
+                          err.message?.toLowerCase().includes('abort') ||
+                          err.message?.toLowerCase().includes('network') ||
+                          err.message?.toLowerCase().includes('fetch') ||
+                          err.message?.toLowerCase().includes('rpc') ||
+                          err.status === 408 ||
+                          err.status === 504 ||
+                          err.status === 429
+      if (isRetryable && i < retries - 1) {
+        logger.warn(`[Story] ${description} failed (attempt ${i + 1}/${retries}) due to: ${err.message}. Retrying in ${delayMs}ms...`)
+        await new Promise(resolve => setTimeout(resolve, delayMs))
+        continue
+      }
+      throw err
+    }
+  }
+  throw lastErr
+}
+
 
 const DB_PATH = path.resolve(CONFIG.DATA_DIR, 'db.json')
 interface DB { ipAssets: Record<string, IPAsset>; licenses: Record<string, License> }
@@ -95,24 +128,30 @@ class StoryProtocolService implements IStoryService {
 
     logger.info(`[Story] Registering IP: "${params.title}"`)
 
-    const reg = await client.ipAsset.mintAndRegisterIp({
-      spgNftContract: SPG_CONTRACT,
-      ipMetadata: {
-        ipMetadataURI: metaUri, ipMetadataHash: metaHash,
-        nftMetadataURI: metaUri, nftMetadataHash: metaHash,
-      },
-      txOptions: { waitForTransaction: true } as any,
-    })
+    const reg = await retryWithBackoff(
+      () => client.ipAsset.mintAndRegisterIp({
+        spgNftContract: SPG_CONTRACT,
+        ipMetadata: {
+          ipMetadataURI: metaUri, ipMetadataHash: metaHash,
+          nftMetadataURI: metaUri, nftMetadataHash: metaHash,
+        },
+        txOptions: { waitForTransaction: true } as any,
+      }),
+      `Register IP: "${params.title}"`
+    )
 
     const ipId   = reg.ipId   as string
     const txHash = reg.txHash as string
     logger.info(`[Story] IP registered ipId=${ipId}`)
 
-    await client.license.attachLicenseTerms({
-      ipId:           ipId as `0x${string}`,
-      licenseTermsId: PIL_TERMS[params.licenseType],
-      txOptions:      { waitForTransaction: true } as any,
-    })
+    await retryWithBackoff(
+      () => client.license.attachLicenseTerms({
+        ipId:           ipId as `0x${string}`,
+        licenseTermsId: PIL_TERMS[params.licenseType],
+        txOptions:      { waitForTransaction: true } as any,
+      }),
+      `Attach License Terms for IP ${ipId}`
+    )
     logger.info(`[Story] PIL terms attached (${params.licenseType})`)
 
     const id = uuidv4()
@@ -130,19 +169,44 @@ class StoryProtocolService implements IStoryService {
     return { ipId, txHash }
   }
 
+  async confirmRegistration(params: {
+    ipId: string; txHash: string; title: string; description: string
+    creatorWallet: string; mimeType: string; originalName: string
+    totalSize: number; licenseType: LicenseType; priceUSD: number
+    locationMapCid: string; isTeamIP?: boolean; teamSettings?: any
+  }): Promise<void> {
+    const id = uuidv4()
+    this.db.ipAssets[id] = {
+      id, ipId: params.ipId, txHash: params.txHash,
+      title: params.title, description: params.description,
+      creatorWallet: params.creatorWallet, mimeType: params.mimeType,
+      originalName: params.originalName, totalSize: params.totalSize,
+      licenseType: params.licenseType, priceUSD: params.priceUSD,
+      locationMapCid: params.locationMapCid, registeredAt: new Date().toISOString(),
+      downloadCount: 0, royaltiesEarned: 0,
+      isTeamIP: params.isTeamIP,
+      teamSettings: params.teamSettings,
+    }
+    this.saveDB()
+    logger.info(`[Story] Confirmed on-chain registration ipId=${params.ipId}`)
+  }
+
   async purchaseLicense(ipAssetId: string, buyerWallet: string): Promise<{ txHash: string; licenseId: string }> {
     const asset = this.getAssetById(ipAssetId)
     if (!asset) throw new Error(`IP asset not found: ${ipAssetId}`)
     if (asset.creatorWallet.toLowerCase() === buyerWallet.toLowerCase())
       throw new Error('Creator cannot purchase own asset')
 
-    const res = await client.license.mintLicenseTokens({
-      licenseTermsId: PIL_TERMS[asset.licenseType],
-      licensorIpId:   asset.ipId as `0x${string}`,
-      receiver:       buyerWallet as `0x${string}`,
-      amount:         BigInt(1),
-      txOptions:      { waitForTransaction: true } as any,
-    })
+    const res = await retryWithBackoff(
+      () => client.license.mintLicenseTokens({
+        licenseTermsId: PIL_TERMS[asset.licenseType],
+        licensorIpId:   asset.ipId as `0x${string}`,
+        receiver:       buyerWallet as `0x${string}`,
+        amount:         BigInt(1),
+        txOptions:      { waitForTransaction: true } as any,
+      }),
+      `Purchase License for IP ${asset.id}`
+    )
 
     const txHash    = res.txHash as string
     const licenseId = uuidv4()
@@ -192,7 +256,15 @@ class StoryProtocolService implements IStoryService {
   incrementDownload(assetId: string): void {
     if (this.db.ipAssets[assetId]) { this.db.ipAssets[assetId].downloadCount++; this.saveDB() }
   }
+
+  updateAssetLocationMap(assetId: string, newLocationMapCid: string): void {
+    const asset = this.db.ipAssets[assetId] ?? Object.values(this.db.ipAssets).find(a => a.ipId === assetId)
+    if (!asset) throw new Error(`IP Asset not found in database: ${assetId}`)
+    asset.locationMapCid = newLocationMapCid
+    asset.lastReshuffledAt = new Date().toISOString()
+    this.saveDB()
+    logger.info(`[Story] Updated asset ${assetId} with reshuffled Location Map CID: ${newLocationMapCid}`)
+  }
 }
 
 export const storyProtocolService = new StoryProtocolService()
-export { storyProtocolService as mockStoryService }

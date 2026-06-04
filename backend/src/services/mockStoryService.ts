@@ -90,6 +90,37 @@ export class MockStoryService implements IStoryService {
     return { ipId, txHash }
   }
 
+  async confirmRegistration(params: {
+    ipId: string; txHash: string; title: string; description: string
+    creatorWallet: string; mimeType: string; originalName: string
+    totalSize: number; licenseType: LicenseType; priceUSD: number
+    locationMapCid: string; isTeamIP?: boolean; teamSettings?: any
+  }): Promise<void> {
+    const id = uuidv4()
+    const asset: IPAsset = {
+      id,
+      ipId: params.ipId,
+      txHash: params.txHash,
+      title: params.title,
+      description: params.description,
+      creatorWallet: params.creatorWallet,
+      mimeType: params.mimeType,
+      originalName: params.originalName,
+      totalSize: params.totalSize,
+      licenseType: params.licenseType,
+      priceUSD: params.priceUSD,
+      locationMapCid: params.locationMapCid,
+      registeredAt: new Date().toISOString(),
+      downloadCount: 0,
+      royaltiesEarned: 0,
+      isTeamIP: params.isTeamIP,
+      teamSettings: params.teamSettings,
+    }
+    this.db.ipAssets[id] = asset
+    this.saveDB()
+    logger.info(`[Mock Story] Confirmed on-chain registration ipId=${params.ipId}`)
+  }
+
   async verifyLicense(ipAssetId: string, walletAddress: string): Promise<boolean> {
     const licenses = Object.values(this.db.licenses)
     const valid = licenses.find(
@@ -173,6 +204,15 @@ export class MockStoryService implements IStoryService {
       this.db.ipAssets[assetId].downloadCount++
       this.saveDB()
     }
+  }
+
+  updateAssetLocationMap(assetId: string, newLocationMapCid: string): void {
+    const asset = this.db.ipAssets[assetId] ?? Object.values(this.db.ipAssets).find(a => a.ipId === assetId)
+    if (!asset) throw new Error(`IP Asset not found in database: ${assetId}`)
+    asset.locationMapCid = newLocationMapCid
+    asset.lastReshuffledAt = new Date().toISOString()
+    this.saveDB()
+    logger.info(`[Mock Story] Updated asset ${assetId} with reshuffled Location Map CID: ${newLocationMapCid}`)
   }
 }
 

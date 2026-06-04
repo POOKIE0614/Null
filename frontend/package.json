@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@rainbow-me/rainbowkit": "^2.1.0",
+    "@story-protocol/core-sdk": "^1.4.4",
     "@tanstack/react-query": "^5.45.0",
     "axios": "^1.7.2",
     "framer-motion": "^11.2.12",

@@ -43,8 +43,8 @@ app.use(errorHandler)
 
 const server = app.listen(CONFIG.PORT, async () => {
   logger.info(`🚀  NullVault API at http://localhost:${CONFIG.PORT}`)
-  logger.info(`📦  Storage : Pinata IPFS`)
-  logger.info(`🔗  Story   : Aeneid Testnet`)
+  logger.info(`📦  Storage Provider: ${CONFIG.ARWEAVE_PROVIDER}`)
+  logger.info(`🔗  Story Provider  : ${CONFIG.STORY_PROVIDER}`)
   logger.info(`🔐  Shamir  : N=${CONFIG.FRAGMENTS_TOTAL}, K=${CONFIG.FRAGMENTS_THRESHOLD}`)
   try {
     const att = await teeService.getAttestation()

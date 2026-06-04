@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express'
 import multer from 'multer'
 import { body, validationResult } from 'express-validator'
 import { requireWallet, uploadRateLimit } from '../middleware/security'
-import { startUploadPipeline, getUploadJob } from '../services/vaultService'
+import { startUploadPipeline, getUploadJob, confirmIPRegistration, startReshufflePipeline, getReshuffleJob } from '../services/vaultService'
 import { storyProtocolService } from '../services/storyProtocolService'
 import { CONFIG } from '../config/constants'
 import { LicenseType } from '../types'
@@ -88,6 +88,36 @@ router.get('/assets/:id', (req: Request, res: Response): void => {
   const asset = storyProtocolService.getAssetById(req.params.id)
   if (!asset) { res.status(404).json({ ok: false, error: 'Asset not found', code: 'ASSET_NOT_FOUND' }); return }
   res.json({ ok: true, data: asset })
+})
+
+router.post('/confirm', requireWallet, async (req: Request, res: Response): Promise<void> => {
+  const { jobId, ipId, txHash } = req.body
+  if (!jobId || !ipId || !txHash) {
+    res.status(400).json({ ok: false, error: 'Missing jobId, ipId, or txHash' })
+    return
+  }
+  try {
+    await confirmIPRegistration({ jobId, ipId, txHash })
+    res.json({ ok: true })
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err.message })
+  }
+})
+
+router.post('/assets/:id/reshuffle', requireWallet, (req: Request, res: Response): void => {
+  const wallet = req.headers['x-wallet-address'] as string
+  try {
+    const jobId = startReshufflePipeline(req.params.id, wallet)
+    res.status(202).json({ ok: true, data: { jobId, message: 'Reshuffling pipeline started' } })
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err.message })
+  }
+})
+
+router.get('/assets/reshuffle/job/:jobId', (req: Request, res: Response): void => {
+  const job = getReshuffleJob(req.params.jobId)
+  if (!job) { res.status(404).json({ ok: false, error: 'Reshuffle job not found or expired', code: 'JOB_NOT_FOUND' }); return }
+  res.json({ ok: true, data: job })
 })
 
 export default router

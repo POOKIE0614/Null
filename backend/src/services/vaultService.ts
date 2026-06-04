@@ -10,8 +10,21 @@ import { CONFIG } from '../config/constants'
 import { logger } from '../utils/logger'
 import { LocationMap, ChunkMap, StoredFragment, Fragment, UploadJob, ReconstructJob, LicenseType } from '../types'
 
+export interface ReshuffleJob {
+  jobId: string
+  status: 'verifying' | 'fetching' | 'assembling' | 'distributing' | 'cleaning' | 'complete' | 'failed'
+  progress: number
+  message: string
+  error?: string
+  startedAt: string
+  logs: string[]
+}
+
 const uploadJobs     = new Map<string, UploadJob>()
 const reconstructJobs = new Map<string, ReconstructJob>()
+const reshuffleJobs   = new Map<string, ReshuffleJob>()
+
+const activeCdrService = cdrService
 
 setInterval(() => {
   const cutoff = Date.now() - CONFIG.JOB_TTL_MS
@@ -19,6 +32,9 @@ setInterval(() => {
     if (new Date(job.startedAt).getTime() < cutoff) uploadJobs.delete(id)
   for (const [id, job] of reconstructJobs.entries())
     if (job.status === 'complete' || job.status === 'failed') reconstructJobs.delete(id)
+  for (const [id, job] of reshuffleJobs.entries())
+    if ((job.status === 'complete' || job.status === 'failed') && new Date(job.startedAt).getTime() < cutoff)
+      reshuffleJobs.delete(id)
   }, 5 * 60_000)
 
 interface PendingDownload {
@@ -36,6 +52,7 @@ setInterval(() => {
 
 export const getUploadJob      = (id: string) => uploadJobs.get(id)
 export const getReconstructJob = (id: string) => reconstructJobs.get(id)
+export const getReshuffleJob   = (id: string) => reshuffleJobs.get(id)
 
 export function consumeDownload(token: string): { buffer: Buffer; mimeType: string; originalName: string } | undefined {
   const decoded = teeService.verifyDownloadToken(token)
@@ -59,10 +76,49 @@ export function startUploadPipeline(params: {
   uploadJobs.set(jobId, { jobId, status: 'processing', progress: 0, message: 'Processing file...', startedAt: new Date().toISOString() })
   runUploadPipeline(jobId, params).catch(err => {
     const j = uploadJobs.get(jobId)!
-    j.status = 'failed'; j.error = err.message; j.message = 'Upload failed'
+    j.status = 'failed'; j.error = err.message; j.message = 'Upload failed: ' + err.message
     logger.error(`Upload ${jobId} failed:`, err)
   })
   return jobId
+}
+
+/**
+ * confirmIPRegistration — called by the frontend after the user's wallet
+ * has submitted the Story Protocol mintAndRegisterIp transaction.
+ * The frontend passes back the real ipId + txHash from the on-chain tx.
+ */
+export async function confirmIPRegistration(params: {
+  jobId: string
+  ipId: string
+  txHash: string
+}): Promise<void> {
+  const job = uploadJobs.get(params.jobId)
+  if (!job) throw new Error('Job not found')
+  if (job.status !== 'awaiting_registration' as any) throw new Error('Job not awaiting registration')
+
+  const pending = (job as any).pendingRegistration as {
+    title: string; description: string; creatorWallet: string; mimeType: string
+    originalName: string; totalSize: number; licenseType: LicenseType
+    priceUSD: number; locationMapCid: string; isTeamIP?: boolean
+    teamSettings?: { coSigners: string[]; threshold: number }
+  }
+  if (!pending) throw new Error('No pending registration data')
+
+  // Save to local DB via Story service
+  await storyProtocolService.confirmRegistration({
+    ...pending,
+    ipId: params.ipId,
+    txHash: params.txHash,
+  })
+
+  const asset = storyProtocolService.getAssetById(params.ipId)
+  Object.assign(job, {
+    status: 'complete',
+    progress: 100,
+    message: 'IP asset registered on Story Protocol ✓',
+    ipAsset: asset,
+  })
+  logger.info(`Job ${params.jobId}: Confirmed ipId=${params.ipId} tx=${params.txHash.slice(0, 16)}...`)
 }
 
 async function runUploadPipeline(jobId: string, params: {
@@ -86,11 +142,18 @@ async function runUploadPipeline(jobId: string, params: {
 
   for (let ci = 0; ci < total; ci++) {
     const { fragments, originalSize } = shamirResult.chunks[ci]
-    const stored: StoredFragment[] = []
-    for (const frag of fragments) {
-      const storageId = await pinataStorageService.storeFragment(frag, frag.fragmentIndex)
-      stored.push({ storageId, nodeIndex: frag.fragmentIndex, chunkIndex: frag.chunkIndex, integrityHash: frag.integrityHash, backupIds: [] })
-    }
+    const stored = await Promise.all(
+      fragments.map(async (frag) => {
+        const storageId = await pinataStorageService.storeFragment(frag, frag.fragmentIndex)
+        return {
+          storageId,
+          nodeIndex: frag.fragmentIndex,
+          chunkIndex: frag.chunkIndex,
+          integrityHash: frag.integrityHash,
+          backupIds: []
+        }
+      })
+    )
     chunkMaps.push({ index: ci, originalSize, fragments: stored })
     upd({ progress: Math.round(28 + (ci + 1) * step), message: `Uploading fragments ${ci + 1}/${total}...` })
   }
@@ -109,20 +172,35 @@ async function runUploadPipeline(jobId: string, params: {
   logger.info(`Job ${jobId}: Location map pinned → ${pinataCid}`)
 
   upd({ progress: 75, message: 'Sealing location map CID in CDR vault (DKG threshold encryption)...' })
-  const cdrVaultUUID = await cdrService.sealCID(pinataCid)
+  const cdrVaultUUID = await activeCdrService.sealCID(pinataCid)
   logger.info(`Job ${jobId}: CDR vault → ${cdrVaultUUID}`)
 
-  upd({ status: 'registering', progress: 82, message: 'Registering IP asset on Story Protocol (on-chain)...' })
-  const { ipId, txHash } = await storyProtocolService.registerIPAsset({
-    title: params.title, description: params.description, creatorWallet: params.creatorWallet,
-    mimeType: processed.mimeType, originalName: processed.originalName, totalSize: processed.totalSize,
-    licenseType: params.licenseType, priceUSD: params.priceUSD, locationMapCid: cdrVaultUUID,
-    isTeamIP: params.isTeamIP, teamSettings: params.teamSettings,
-  })
+  // ── Hand off to frontend wallet for on-chain Story Protocol registration ──
+  // The frontend will call POST /api/upload/confirm with ipId + txHash
+  // after the user's MetaMask submits mintAndRegisterIp on-chain.
+  const pendingRegistration = {
+    title: params.title,
+    description: params.description,
+    creatorWallet: params.creatorWallet,
+    mimeType: processed.mimeType,
+    originalName: processed.originalName,
+    totalSize: processed.totalSize,
+    licenseType: params.licenseType,
+    priceUSD: params.priceUSD,
+    locationMapCid: cdrVaultUUID,
+    isTeamIP: params.isTeamIP,
+    teamSettings: params.teamSettings,
+  }
 
-  const asset = storyProtocolService.getAssetById(ipId)
-  upd({ status: 'complete', progress: 100, message: 'IP asset registered on Story Protocol ✓', ipAsset: asset })
-  logger.info(`Job ${jobId}: Complete ipId=${ipId} tx=${txHash.slice(0, 16)}...`)
+  const job = uploadJobs.get(jobId)!
+  Object.assign(job, {
+    status: 'awaiting_registration',
+    progress: 80,
+    message: 'Ready for on-chain registration — confirm in your wallet...',
+    pendingRegistration,
+  } as any)
+
+  logger.info(`Job ${jobId}: Awaiting frontend wallet registration`)
 }
 
 export function startReconstructPipeline(params: { assetId: string; buyerWallet: string; signatures?: string[] }): string {
@@ -191,7 +269,7 @@ async function runReconstructPipeline(jobId: string, params: { assetId: string; 
   }
 
   upd({ progress: 15, message: 'License verified ✓ — unsealing CDR vault...' })
-  const pinataCid = await cdrService.unsealCID(asset.locationMapCid)
+  const pinataCid = await activeCdrService.unsealCID(asset.locationMapCid)
 
   upd({ status: 'fetching', progress: 30, message: 'Fetching location map from Pinata IPFS...' })
   const locationMap = await pinataStorageService.fetchLocationMap(pinataCid)
@@ -229,4 +307,154 @@ async function runReconstructPipeline(jobId: string, params: { assetId: string; 
 
   upd({ status: 'complete', progress: 100, message: 'TEE: File reconstructed, signed, staged for delivery ✓', downloadUrl: `/api/download/${downloadToken}` })
   logger.info(`Reconstruct ${jobId}: ${reconstructed.length} bytes session=${sessionId.slice(0, 8)}`)
+}
+
+export function startReshufflePipeline(assetId: string, requestWallet: string): string {
+  const jobId = uuidv4()
+  reshuffleJobs.set(jobId, {
+    jobId,
+    status: 'verifying',
+    progress: 0,
+    message: 'Validating IP ownership...',
+    startedAt: new Date().toISOString(),
+    logs: [`[${new Date().toLocaleTimeString()}] Initializing reshuffling enclave...`]
+  })
+  runReshufflePipeline(jobId, assetId, requestWallet).catch(err => {
+    const j = reshuffleJobs.get(jobId)
+    if (j) {
+      j.status = 'failed'
+      j.error = err.message
+      j.message = err.message
+      j.logs.push(`[${new Date().toLocaleTimeString()}] Reshuffle failed: ${err.message}`)
+    }
+    logger.error(`Reshuffle job ${jobId} failed:`, err)
+  })
+  return jobId
+}
+
+async function runReshufflePipeline(jobId: string, assetId: string, requestWallet: string): Promise<void> {
+  const upd = (u: Partial<ReshuffleJob>) => {
+    const j = reshuffleJobs.get(jobId)
+    if (j) Object.assign(j, u)
+  }
+  const addLog = (msg: string) => {
+    const time = new Date().toLocaleTimeString()
+    const j = reshuffleJobs.get(jobId)
+    if (j) {
+      j.logs.push(`[${time}] ${msg}`)
+    }
+    upd({ message: msg })
+  }
+
+  addLog('Validating IP ownership...')
+  const asset = storyProtocolService.getAssetById(assetId)
+  if (!asset) throw new Error('IP asset not found')
+
+  if (asset.creatorWallet.toLowerCase() !== requestWallet.toLowerCase()) {
+    throw new Error('Only the IP creator can trigger fragment rotation')
+  }
+
+  upd({ progress: 10 })
+  addLog('Enclave active: retrieving dynamic unseal pointer...')
+
+  const pinataCid = await activeCdrService.unsealCID(asset.locationMapCid)
+  upd({ progress: 20 })
+  addLog('Fetching location map from Pinata IPFS...')
+  const oldLocationMap = await pinataStorageService.fetchLocationMap(pinataCid)
+  const { k, n, totalChunks, fileHash, mimeType, originalName } = oldLocationMap
+
+  upd({ progress: 35 })
+  addLog(`Enclave active: fetching old fragments for Lagrange interpolation...`)
+  const chunkFragmentSets: Array<{ chunkIndex: number; fragments: Fragment[] }> = []
+
+  // Gather old fragment storage CIDs to clean them up later
+  const oldFragmentCids: string[] = []
+  for (const chunkMap of oldLocationMap.chunks) {
+    const toFetch = chunkMap.fragments.slice(0, k)
+    const fetched: Fragment[] = []
+    for (const sf of toFetch) {
+      const buf = await pinataStorageService.fetchFragment(sf.storageId)
+      fetched.push({
+        chunkIndex: chunkMap.index,
+        fragmentIndex: sf.nodeIndex,
+        x: sf.nodeIndex,
+        data: buf.toString('base64'),
+        integrityHash: sf.integrityHash,
+        size: buf.length
+      })
+    }
+    chunkFragmentSets.push({ chunkIndex: chunkMap.index, fragments: fetched })
+
+    // Collect all N old fragment CIDs from the chunkMap to unpin them
+    for (const sf of chunkMap.fragments) {
+      oldFragmentCids.push(sf.storageId)
+    }
+  }
+
+  upd({ progress: 50 })
+  addLog('Lagrange interpolation verified expected file hash')
+  const reconstructedBuffer = reconstructFile(chunkFragmentSets, k, fileHash)
+
+  upd({ progress: 60 })
+  addLog('Generated new polynomial coefficients')
+
+  // Reprocess file buffer to get chunks
+  const processed = processFile(reconstructedBuffer, originalName, mimeType)
+  const shamirResult = splitChunks(processed.chunks, n, k)
+
+  upd({ progress: 75 })
+  addLog('Uploading 10 new SSS fragments to IPFS...')
+  const newChunkMaps: ChunkMap[] = []
+  const total = shamirResult.chunks.length
+
+  for (let ci = 0; ci < total; ci++) {
+    const { fragments, originalSize } = shamirResult.chunks[ci]
+    const stored = await Promise.all(
+      fragments.map(async (frag) => {
+        const storageId = await pinataStorageService.storeFragment(frag, frag.fragmentIndex)
+        return {
+          storageId,
+          nodeIndex: frag.fragmentIndex,
+          chunkIndex: frag.chunkIndex,
+          integrityHash: frag.integrityHash,
+          backupIds: []
+        }
+      })
+    )
+    newChunkMaps.push({ index: ci, originalSize, fragments: stored })
+  }
+
+  upd({ progress: 85 })
+  addLog('Pinning new location map to IPFS...')
+  const newLocationMap: LocationMap = {
+    ...oldLocationMap,
+    createdAt: new Date().toISOString(),
+    chunks: newChunkMaps
+  }
+  const newPinataCid = await pinataStorageService.storeLocationMap(newLocationMap)
+
+  addLog('Dynamic unseal pointer successfully updated on-chain (sealing new map)...')
+  const newCdrVaultUUID = await activeCdrService.sealCID(newPinataCid)
+
+  upd({ progress: 95 })
+  addLog('Unpinning stale fragment CIDs from Pinata...')
+  // Unpin the old location map CID
+  try {
+    await pinataStorageService.unpin(pinataCid)
+  } catch (err: any) {
+    logger.warn(`Failed to unpin old location map CID ${pinataCid}: ${err.message}`)
+  }
+
+  // Unpin all old fragments in background
+  for (const cid of oldFragmentCids) {
+    pinataStorageService.unpin(cid).catch((err: any) => {
+      logger.warn(`Failed to unpin fragment CID ${cid}: ${err.message}`)
+    })
+  }
+
+  // Update DB record
+  storyProtocolService.updateAssetLocationMap(assetId, newCdrVaultUUID)
+
+  upd({ progress: 100, status: 'complete' })
+  addLog('Reshuffling complete! Access coordinates rotated successfully ✓')
 }

@@ -1,5 +1,5 @@
 import { CDRClient, initWasm, uuidToLabel } from '@piplabs/cdr-sdk'
-import { createPublicClient, createWalletClient, http, toHex } from 'viem'
+import { createPublicClient, createWalletClient, http, toHex, fallback } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { logger } from '../utils/logger'
 
@@ -10,6 +10,33 @@ const STORY_API_URL = process.env.STORY_API_URL    || 'http://172.192.41.96:1317
 if (!PRIVATE_KEY) throw new Error('[CDR] STORY_PRIVATE_KEY not set')
 
 const account = privateKeyToAccount(PRIVATE_KEY)
+
+async function retryWithBackoff<T>(fn: () => Promise<T>, description: string, retries = 3, delayMs = 5000): Promise<T> {
+  let lastErr: any
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn()
+    } catch (err: any) {
+      lastErr = err
+      const isRetryable = err.message?.toLowerCase().includes('timeout') ||
+                          err.message?.toLowerCase().includes('took too long') ||
+                          err.message?.toLowerCase().includes('abort') ||
+                          err.message?.toLowerCase().includes('network') ||
+                          err.message?.toLowerCase().includes('fetch') ||
+                          err.message?.toLowerCase().includes('rpc') ||
+                          err.status === 408 ||
+                          err.status === 504 ||
+                          err.status === 429
+      if (isRetryable && i < retries - 1) {
+        logger.warn(`[CDR] ${description} failed (attempt ${i + 1}/${retries}) due to: ${err.message}. Retrying in ${delayMs}ms...`)
+        await new Promise(resolve => setTimeout(resolve, delayMs))
+        continue
+      }
+      throw err
+    }
+  }
+  throw lastErr
+}
 
 class CDRService {
   private clientPromise: Promise<CDRClient>
@@ -22,8 +49,12 @@ class CDRService {
     await initWasm()
     logger.info('[CDR] WASM initialised')
 
-    const publicClient = createPublicClient({ transport: http(RPC_URL) })
-    const walletClient = createWalletClient({ account, transport: http(RPC_URL) })
+    const transport = fallback([
+      http(RPC_URL, { timeout: 120000 }),
+      http('https://rpc.ankr.com/story_aeneid_testnet', { timeout: 120000 })
+    ])
+    const publicClient = createPublicClient({ transport })
+    const walletClient = createWalletClient({ account, transport })
 
     const client = new CDRClient({
       network: 'testnet',
@@ -42,17 +73,24 @@ class CDRService {
   async sealCID(pinataCid: string): Promise<string> {
     const client = await this.getClient()
 
-    const { uuid, txHash: allocateTx } = await client.uploader.allocate({
-      updatable: false,
-      writeConditionAddr: account.address,
-      readConditionAddr:  account.address,
-      writeConditionData: '0x',
-      readConditionData:  '0x',
-      skipConditionValidation: true,
-    })
+    logger.info(`[CDR] Allocating vault for CID: ${pinataCid.slice(0, 16)}...`)
+    const { uuid, txHash: allocateTx } = await retryWithBackoff(
+      () => client.uploader.allocate({
+        updatable: false,
+        writeConditionAddr: account.address,
+        readConditionAddr:  account.address,
+        writeConditionData: '0x',
+        readConditionData:  '0x',
+        skipConditionValidation: true,
+      }),
+      'Vault allocation'
+    )
     logger.info(`[CDR] Vault allocated uuid=${uuid} tx=${allocateTx.slice(0, 18)}...`)
 
-    const globalPubKey = await client.observer.getGlobalPubKey()
+    const globalPubKey = await retryWithBackoff(
+      () => client.observer.getGlobalPubKey(),
+      'Get global pubkey'
+    )
     const cidBytes     = Buffer.from(pinataCid, 'utf8')
 
     const ciphertext = await client.uploader.encryptDataKey({
@@ -61,11 +99,15 @@ class CDRService {
       label:        uuidToLabel(uuid),
     })
 
-    const { txHash: writeTx } = await client.uploader.write({
-      uuid,
-      accessAuxData: '0x',
-      encryptedData: toHex(ciphertext.raw),
-    })
+    logger.info(`[CDR] Writing encrypted CID data for uuid=${uuid}`)
+    const { txHash: writeTx } = await retryWithBackoff(
+      () => client.uploader.write({
+        uuid,
+        accessAuxData: '0x',
+        encryptedData: toHex(ciphertext.raw),
+      }),
+      'Vault write'
+    )
     logger.info(`[CDR] CID sealed uuid=${uuid} tx=${writeTx.slice(0, 18)}...`)
     return String(uuid)
   }
@@ -74,11 +116,14 @@ class CDRService {
     const client = await this.getClient()
     logger.info(`[CDR] Unsealing vault uuid=${vaultUUID}`)
 
-    const { dataKey, txHash } = await client.consumer.accessCDR({
-      uuid:          Number(vaultUUID),
-      accessAuxData: '0x',
-      timeoutMs:     120_000,
-    })
+    const { dataKey, txHash } = await retryWithBackoff(
+      () => client.consumer.accessCDR({
+        uuid:          Number(vaultUUID),
+        accessAuxData: '0x',
+        timeoutMs:     120_000,
+      }),
+      'Access CDR (unseal)'
+    )
 
     const pinataCid = Buffer.from(dataKey).toString('utf8')
     logger.info(`[CDR] Unsealed tx=${txHash.slice(0, 18)}... cid=${pinataCid.slice(0, 16)}...`)
@@ -89,3 +134,4 @@ class CDRService {
 }
 
 export const cdrService = new CDRService()
+

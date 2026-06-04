@@ -97,6 +97,20 @@ export class MockStorageService implements IStorageService {
     return JSON.parse(raw) as LocationMap
   }
 
+  async unpin(storageId: string): Promise<void> {
+    logger.debug(`[Mock Arweave] Unpin request for ${storageId} — unpinned mock file`)
+    // Mock delete by checking if a file exists and removing it
+    const filePath = path.join(FRAGMENTS_DIR, `${storageId}.bin`)
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath)
+    } else {
+      const mapPath = path.join(MAPS_DIR, `${storageId}.json`)
+      if (fs.existsSync(mapPath)) {
+        fs.unlinkSync(mapPath)
+      }
+    }
+  }
+
   /** Dev helper: list all stored fragment IDs */
   listFragments(): string[] {
     return fs
