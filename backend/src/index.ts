@@ -41,18 +41,21 @@ app.use('/api/tee',      teeRoutes)
 app.use(notFoundHandler)
 app.use(errorHandler)
 
-const server = app.listen(CONFIG.PORT, async () => {
-  logger.info(`🚀  NullVault API at http://localhost:${CONFIG.PORT}`)
-  logger.info(`📦  Storage Provider: ${CONFIG.ARWEAVE_PROVIDER}`)
-  logger.info(`🔗  Story Provider  : ${CONFIG.STORY_PROVIDER}`)
-  logger.info(`🔐  Shamir  : N=${CONFIG.FRAGMENTS_TOTAL}, K=${CONFIG.FRAGMENTS_THRESHOLD}`)
-  try {
-    const att = await teeService.getAttestation()
-    logger.info(`🛡️   TEE     : ${att.teeAddress}`)
-  } catch { /* logged internally */ }
-})
+// Only listen when running locally — Vercel serverless handles its own routing
+if (!process.env.VERCEL) {
+  const server = app.listen(CONFIG.PORT, async () => {
+    logger.info(`🚀  NullVault API at http://localhost:${CONFIG.PORT}`)
+    logger.info(`📦  Storage Provider: ${CONFIG.ARWEAVE_PROVIDER}`)
+    logger.info(`🔗  Story Provider  : ${CONFIG.STORY_PROVIDER}`)
+    logger.info(`🔐  Shamir  : N=${CONFIG.FRAGMENTS_TOTAL}, K=${CONFIG.FRAGMENTS_THRESHOLD}`)
+    try {
+      const att = await teeService.getAttestation()
+      logger.info(`🛡️   TEE     : ${att.teeAddress}`)
+    } catch { /* logged internally */ }
+  })
 
-process.on('SIGTERM', () => { server.close(() => { logger.info('Server closed'); process.exit(0) }) })
-process.on('SIGINT',  () => { server.close(() => process.exit(0)) })
+  process.on('SIGTERM', () => { server.close(() => { logger.info('Server closed'); process.exit(0) }) })
+  process.on('SIGINT',  () => { server.close(() => process.exit(0)) })
+}
 
 export default app
