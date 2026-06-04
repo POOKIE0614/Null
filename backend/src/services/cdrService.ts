@@ -37,15 +37,48 @@ async function retryWithBackoff<T>(fn: () => Promise<T>, description: string, re
   throw lastErr
 }
 
+import fs from 'fs'
+import path from 'path'
+import { v4 as uuidv4 } from 'uuid'
+
+const MOCK_DB_PATH = path.resolve(CONFIG.DATA_DIR, 'cdr-mock-db.json')
+
+function loadMockDB(): Record<string, string> {
+  if (fs.existsSync(MOCK_DB_PATH)) {
+    try {
+      return JSON.parse(fs.readFileSync(MOCK_DB_PATH, 'utf8'))
+    } catch {
+      return {}
+    }
+  }
+  return {}
+}
+
+function saveMockDB(db: Record<string, string>): void {
+  try {
+    if (!fs.existsSync(path.dirname(MOCK_DB_PATH))) {
+      fs.mkdirSync(path.dirname(MOCK_DB_PATH), { recursive: true })
+    }
+    fs.writeFileSync(MOCK_DB_PATH, JSON.stringify(db, null, 2))
+  } catch (e) {
+    logger.error('Failed to save mock CDR DB:', e)
+  }
+}
+
 class CDRService {
-  private clientPromise: Promise<CDRClient>
+  private clientPromise: Promise<CDRClient | null>
 
   constructor() {
     this.clientPromise = this.init()
   }
 
-  private async init(): Promise<CDRClient> {
-    if (CONFIG.STORY_PROVIDER === 'real' && !process.env.STORY_PRIVATE_KEY) {
+  private async init(): Promise<CDRClient | null> {
+    if (CONFIG.STORY_PROVIDER !== 'real') {
+      logger.info('[CDR] Story provider is mock, skipping CDR initialization')
+      return null
+    }
+
+    if (!process.env.STORY_PRIVATE_KEY) {
       throw new Error('[CDR] STORY_PRIVATE_KEY is required when STORY_PROVIDER is real')
     }
     await initWasm()
@@ -68,12 +101,22 @@ class CDRService {
     return client
   }
 
-  private async getClient(): Promise<CDRClient> {
+  private async getClient(): Promise<CDRClient | null> {
     return this.clientPromise
   }
 
   async sealCID(pinataCid: string): Promise<string> {
+    if (CONFIG.STORY_PROVIDER !== 'real') {
+      const mockUuid = uuidv4()
+      logger.info(`[CDR] [MOCK] Sealing CID: ${pinataCid} -> UUID: ${mockUuid}`)
+      const db = loadMockDB()
+      db[mockUuid] = pinataCid
+      saveMockDB(db)
+      return mockUuid
+    }
+
     const client = await this.getClient()
+    if (!client) throw new Error('[CDR] Client not initialized')
 
     logger.info(`[CDR] Allocating vault for CID: ${pinataCid.slice(0, 16)}...`)
     const { uuid, txHash: allocateTx } = await retryWithBackoff(
@@ -115,7 +158,16 @@ class CDRService {
   }
 
   async unsealCID(vaultUUID: string): Promise<string> {
+    if (CONFIG.STORY_PROVIDER !== 'real') {
+      const db = loadMockDB()
+      const pinataCid = db[vaultUUID] || vaultUUID
+      logger.info(`[CDR] [MOCK] Unsealing vault uuid=${vaultUUID} -> CID: ${pinataCid}`)
+      return pinataCid
+    }
+
     const client = await this.getClient()
+    if (!client) throw new Error('[CDR] Client not initialized')
+
     logger.info(`[CDR] Unsealing vault uuid=${vaultUUID}`)
 
     const { dataKey, txHash } = await retryWithBackoff(

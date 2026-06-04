@@ -3,10 +3,15 @@ import { recoverMessageAddress } from 'viem'
 import { processFile } from '../utils/fileProcessor'
 import { splitChunks, reconstructFile } from './shamirService'
 import { pinataStorageService } from './pinataStorageService'
+import { mockStorageService } from './mockStorageService'
 import { storyProtocolService } from './storyProtocolService'
 import { cdrService } from './cdrService'
 import { teeService } from './teeService'
 import { CONFIG } from '../config/constants'
+
+const activeStorageService = CONFIG.ARWEAVE_PROVIDER === 'real'
+  ? pinataStorageService
+  : mockStorageService
 import { logger } from '../utils/logger'
 import { LocationMap, ChunkMap, StoredFragment, Fragment, UploadJob, ReconstructJob, LicenseType } from '../types'
 
@@ -144,7 +149,7 @@ async function runUploadPipeline(jobId: string, params: {
     const { fragments, originalSize } = shamirResult.chunks[ci]
     const stored = await Promise.all(
       fragments.map(async (frag) => {
-        const storageId = await pinataStorageService.storeFragment(frag, frag.fragmentIndex)
+        const storageId = await activeStorageService.storeFragment(frag, frag.fragmentIndex)
         return {
           storageId,
           nodeIndex: frag.fragmentIndex,
@@ -168,7 +173,7 @@ async function runUploadPipeline(jobId: string, params: {
     createdAt: new Date().toISOString(), chunks: chunkMaps,
   }
 
-  const pinataCid = await pinataStorageService.storeLocationMap(locationMap)
+  const pinataCid = await activeStorageService.storeLocationMap(locationMap)
   logger.info(`Job ${jobId}: Location map pinned → ${pinataCid}`)
 
   upd({ progress: 75, message: 'Sealing location map CID in CDR vault (DKG threshold encryption)...' })
@@ -272,7 +277,7 @@ async function runReconstructPipeline(jobId: string, params: { assetId: string; 
   const pinataCid = await activeCdrService.unsealCID(asset.locationMapCid)
 
   upd({ status: 'fetching', progress: 30, message: 'Fetching location map from Pinata IPFS...' })
-  const locationMap = await pinataStorageService.fetchLocationMap(pinataCid)
+  const locationMap = await activeStorageService.fetchLocationMap(pinataCid)
   const { k, totalChunks, fileHash, mimeType, originalName } = locationMap
 
   upd({ progress: 36, message: `Fetching K=${k} fragments per chunk from IPFS...` })
@@ -283,7 +288,7 @@ async function runReconstructPipeline(jobId: string, params: { assetId: string; 
     const toFetch = chunkMap.fragments.slice(0, k)
     const fetched: Fragment[] = []
     for (const sf of toFetch) {
-      const buf = await pinataStorageService.fetchFragment(sf.storageId)
+      const buf = await activeStorageService.fetchFragment(sf.storageId)
       fetched.push({ chunkIndex: chunkMap.index, fragmentIndex: sf.nodeIndex, x: sf.nodeIndex, data: buf.toString('base64'), integrityHash: sf.integrityHash, size: buf.length })
     }
     chunkFragmentSets.push({ chunkIndex: chunkMap.index, fragments: fetched })
@@ -360,7 +365,7 @@ async function runReshufflePipeline(jobId: string, assetId: string, requestWalle
   const pinataCid = await activeCdrService.unsealCID(asset.locationMapCid)
   upd({ progress: 20 })
   addLog('Fetching location map from Pinata IPFS...')
-  const oldLocationMap = await pinataStorageService.fetchLocationMap(pinataCid)
+  const oldLocationMap = await activeStorageService.fetchLocationMap(pinataCid)
   const { k, n, totalChunks, fileHash, mimeType, originalName } = oldLocationMap
 
   upd({ progress: 35 })
@@ -373,7 +378,7 @@ async function runReshufflePipeline(jobId: string, assetId: string, requestWalle
     const toFetch = chunkMap.fragments.slice(0, k)
     const fetched: Fragment[] = []
     for (const sf of toFetch) {
-      const buf = await pinataStorageService.fetchFragment(sf.storageId)
+      const buf = await activeStorageService.fetchFragment(sf.storageId)
       fetched.push({
         chunkIndex: chunkMap.index,
         fragmentIndex: sf.nodeIndex,
@@ -411,7 +416,7 @@ async function runReshufflePipeline(jobId: string, assetId: string, requestWalle
     const { fragments, originalSize } = shamirResult.chunks[ci]
     const stored = await Promise.all(
       fragments.map(async (frag) => {
-        const storageId = await pinataStorageService.storeFragment(frag, frag.fragmentIndex)
+        const storageId = await activeStorageService.storeFragment(frag, frag.fragmentIndex)
         return {
           storageId,
           nodeIndex: frag.fragmentIndex,
@@ -431,7 +436,7 @@ async function runReshufflePipeline(jobId: string, assetId: string, requestWalle
     createdAt: new Date().toISOString(),
     chunks: newChunkMaps
   }
-  const newPinataCid = await pinataStorageService.storeLocationMap(newLocationMap)
+  const newPinataCid = await activeStorageService.storeLocationMap(newLocationMap)
 
   addLog('Dynamic unseal pointer successfully updated on-chain (sealing new map)...')
   const newCdrVaultUUID = await activeCdrService.sealCID(newPinataCid)
@@ -440,14 +445,14 @@ async function runReshufflePipeline(jobId: string, assetId: string, requestWalle
   addLog('Unpinning stale fragment CIDs from Pinata...')
   // Unpin the old location map CID
   try {
-    await pinataStorageService.unpin(pinataCid)
+    await activeStorageService.unpin(pinataCid)
   } catch (err: any) {
     logger.warn(`Failed to unpin old location map CID ${pinataCid}: ${err.message}`)
   }
 
   // Unpin all old fragments in background
   for (const cid of oldFragmentCids) {
-    pinataStorageService.unpin(cid).catch((err: any) => {
+    activeStorageService.unpin(cid).catch((err: any) => {
       logger.warn(`Failed to unpin fragment CID ${cid}: ${err.message}`)
     })
   }

@@ -270,4 +270,8 @@ class StoryProtocolService implements IStoryService {
   }
 }
 
-export const storyProtocolService = new StoryProtocolService()
+import { mockStoryService } from './mockStoryService'
+
+export const storyProtocolService = CONFIG.STORY_PROVIDER === 'real'
+  ? new StoryProtocolService()
+  : mockStoryService
