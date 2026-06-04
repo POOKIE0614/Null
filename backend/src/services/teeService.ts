@@ -6,8 +6,7 @@ import path from 'path'
 import { CONFIG } from '../config/constants'
 import { logger } from '../utils/logger'
 
-const PRIVATE_KEY = process.env.STORY_PRIVATE_KEY as `0x${string}`
-if (!PRIVATE_KEY) throw new Error('[TEE] STORY_PRIVATE_KEY not set')
+const PRIVATE_KEY = (process.env.STORY_PRIVATE_KEY || '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef') as `0x${string}`
 
 const account     = privateKeyToAccount(PRIVATE_KEY)
 const TEE_ADDRESS = account.address
@@ -40,6 +39,9 @@ class TEEService {
   private readonly startedAt = new Date().toISOString()
 
   constructor() {
+    if (CONFIG.STORY_PROVIDER === 'real' && !process.env.STORY_PRIVATE_KEY) {
+      throw new Error('[TEE] STORY_PRIVATE_KEY is required when STORY_PROVIDER is real')
+    }
     this.ensureDirs()
     this.initAttestation().catch(e => logger.error('[TEE] Attestation init failed:', e))
   }

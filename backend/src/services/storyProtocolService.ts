@@ -10,7 +10,7 @@ import { IPAsset, License, LicenseType, IStoryService, TeamSettings } from '../t
 import { CONFIG } from '../config/constants'
 import { logger } from '../utils/logger'
 
-const PRIVATE_KEY    = process.env.STORY_PRIVATE_KEY as `0x${string}`
+const PRIVATE_KEY    = (process.env.STORY_PRIVATE_KEY || '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef') as `0x${string}`
 const RPC_URL        = process.env.STORY_RPC_URL    || 'https://aeneid.storyrpc.io'
 const PINATA_JWT     = process.env.PINATA_JWT!
 const PINATA_GATEWAY = process.env.PINATA_GATEWAY   || 'https://gateway.pinata.cloud'
@@ -23,8 +23,6 @@ const PIL_TERMS: Record<LicenseType, bigint> = {
   'commercial':     BigInt(process.env.STORY_PIL_COMMERCIAL_ID     || '2'),
   'exclusive':      BigInt(process.env.STORY_PIL_EXCLUSIVE_ID      || '3'),
 }
-
-if (!PRIVATE_KEY) throw new Error('[Story] STORY_PRIVATE_KEY not set')
 
 const account      = privateKeyToAccount(PRIVATE_KEY)
 const transport = fallback([
@@ -87,7 +85,12 @@ async function pinMetadata(content: object, name: string): Promise<string> {
 class StoryProtocolService implements IStoryService {
   private db: DB = { ipAssets: {}, licenses: {} }
 
-  constructor() { this.loadDB() }
+  constructor() {
+    if (CONFIG.STORY_PROVIDER === 'real' && !process.env.STORY_PRIVATE_KEY) {
+      throw new Error('[Story] STORY_PRIVATE_KEY is required when STORY_PROVIDER is real')
+    }
+    this.loadDB()
+  }
 
   private loadDB(): void {
     if (!fs.existsSync(path.dirname(DB_PATH))) fs.mkdirSync(path.dirname(DB_PATH), { recursive: true })

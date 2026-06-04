@@ -23,9 +23,26 @@ export const securityHeaders = helmet({
   crossOriginEmbedderPolicy: false, // allow downloads
 })
 
-/** CORS — only allow the frontend origin */
+/** CORS — dynamically allow local dev, Vercel subdomains, and the configured frontend URL */
 export const corsMiddleware = cors({
-  origin: CONFIG.FRONTEND_URL,
+  origin: (origin, callback) => {
+    // If no origin (e.g. server-to-server, curl, same-origin without Origin header), allow it
+    if (!origin) {
+      callback(null, true)
+      return
+    }
+
+    const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin)
+    const isVercel = origin.endsWith('.vercel.app')
+    const isConfigured = origin === CONFIG.FRONTEND_URL
+
+    if (isLocalhost || isVercel || isConfigured) {
+      callback(null, true)
+    } else {
+      logger.warn(`[CORS] Rejected origin: ${origin}`)
+      callback(new Error('Not allowed by CORS'))
+    }
+  },
   methods: ['GET', 'POST', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Wallet-Address'],
   credentials: false,

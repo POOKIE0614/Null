@@ -2380,12 +2380,6 @@ export default function App() {
   const [assetsLoad, setAssetsLoad] = useState(true)
   const [backendOk, setBackendOk] = useState(true)
 
-  useEffect(() => {
-    nvApi.health()
-      .then(() => setBackendOk(true))
-      .catch(() => setBackendOk(false))
-  }, [])
-
   const loadAllAssets = useCallback(async () => {
     setAssetsLoad(true)
     try {
@@ -2396,6 +2390,35 @@ export default function App() {
       setAssetsLoad(false)
     }
   }, [])
+
+  useEffect(() => {
+    let active = true
+    let timerId: any
+
+    const checkHealth = () => {
+      nvApi.health()
+        .then(() => {
+          if (active) {
+            setBackendOk(true)
+            // Once backend is online, also trigger loading of assets
+            loadAllAssets()
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setBackendOk(false)
+            timerId = setTimeout(checkHealth, 3000)
+          }
+        })
+    }
+
+    checkHealth()
+
+    return () => {
+      active = false
+      clearTimeout(timerId)
+    }
+  }, [loadAllAssets])
 
   useEffect(() => {
     loadAllAssets()

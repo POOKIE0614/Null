@@ -2,12 +2,11 @@ import { CDRClient, initWasm, uuidToLabel } from '@piplabs/cdr-sdk'
 import { createPublicClient, createWalletClient, http, toHex, fallback } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { logger } from '../utils/logger'
+import { CONFIG } from '../config/constants'
 
-const PRIVATE_KEY   = process.env.STORY_PRIVATE_KEY as `0x${string}`
+const PRIVATE_KEY   = (process.env.STORY_PRIVATE_KEY || '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef') as `0x${string}`
 const RPC_URL       = process.env.STORY_RPC_URL    || 'https://aeneid.storyrpc.io'
 const STORY_API_URL = process.env.STORY_API_URL    || 'http://172.192.41.96:1317'
-
-if (!PRIVATE_KEY) throw new Error('[CDR] STORY_PRIVATE_KEY not set')
 
 const account = privateKeyToAccount(PRIVATE_KEY)
 
@@ -46,6 +45,9 @@ class CDRService {
   }
 
   private async init(): Promise<CDRClient> {
+    if (CONFIG.STORY_PROVIDER === 'real' && !process.env.STORY_PRIVATE_KEY) {
+      throw new Error('[CDR] STORY_PRIVATE_KEY is required when STORY_PROVIDER is real')
+    }
     await initWasm()
     logger.info('[CDR] WASM initialised')
 
