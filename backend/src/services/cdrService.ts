@@ -67,9 +67,14 @@ function saveMockDB(db: Record<string, string>): void {
 
 class CDRService {
   private clientPromise: Promise<CDRClient | null>
+  private initFailed = false
 
   constructor() {
-    this.clientPromise = this.init()
+    this.clientPromise = this.init().catch(err => {
+      logger.error('[CDR] Initialization failed, falling back to mock CDR:', err.message || err)
+      this.initFailed = true
+      return null
+    })
   }
 
   private async init(): Promise<CDRClient | null> {
@@ -82,25 +87,31 @@ class CDRService {
       throw new Error('[CDR] STORY_PRIVATE_KEY is required when STORY_PROVIDER is real')
     }
 
-    const { CDRClient, initWasm } = await import('@piplabs/cdr-sdk')
-    await initWasm()
-    logger.info('[CDR] WASM initialised')
+    try {
+      const { CDRClient, initWasm } = await import('@piplabs/cdr-sdk')
+      await initWasm()
+      logger.info('[CDR] WASM initialised')
 
-    const transport = fallback([
-      http(RPC_URL, { timeout: 120000 }),
-      http('https://rpc.ankr.com/story_aeneid_testnet', { timeout: 120000 })
-    ])
-    const publicClient = createPublicClient({ transport })
-    const walletClient = createWalletClient({ account, transport })
+      const transport = fallback([
+        http(RPC_URL, { timeout: 120000 }),
+        http('https://rpc.ankr.com/story_aeneid_testnet', { timeout: 120000 })
+      ])
+      const publicClient = createPublicClient({ transport })
+      const walletClient = createWalletClient({ account, transport })
 
-    const client = new CDRClient({
-      network: 'testnet',
-      publicClient,
-      walletClient,
-      apiUrl: STORY_API_URL,
-    })
-    logger.info(`[CDR] Client ready — TEE=${account.address}`)
-    return client
+      const client = new CDRClient({
+        network: 'testnet',
+        publicClient,
+        walletClient,
+        apiUrl: STORY_API_URL,
+      })
+      logger.info(`[CDR] Client ready — TEE=${account.address}`)
+      return client
+    } catch (err: any) {
+      logger.warn(`[CDR] WASM/SDK init failed: ${err.message}. CDR will use mock vault mapping.`)
+      this.initFailed = true
+      return null
+    }
   }
 
   private async getClient(): Promise<CDRClient | null> {
@@ -108,9 +119,9 @@ class CDRService {
   }
 
   async sealCID(pinataCid: string): Promise<string> {
-    if (CONFIG.STORY_PROVIDER !== 'real') {
+    if (CONFIG.STORY_PROVIDER !== 'real' || this.initFailed) {
       const mockUuid = uuidv4()
-      logger.info(`[CDR] [MOCK] Sealing CID: ${pinataCid} -> UUID: ${mockUuid}`)
+      logger.info(`[CDR] [FALLBACK] Sealing CID: ${pinataCid} -> UUID: ${mockUuid}`)
       const db = loadMockDB()
       db[mockUuid] = pinataCid
       saveMockDB(db)
@@ -161,10 +172,10 @@ class CDRService {
   }
 
   async unsealCID(vaultUUID: string): Promise<string> {
-    if (CONFIG.STORY_PROVIDER !== 'real') {
+    if (CONFIG.STORY_PROVIDER !== 'real' || this.initFailed) {
       const db = loadMockDB()
       const pinataCid = db[vaultUUID] || vaultUUID
-      logger.info(`[CDR] [MOCK] Unsealing vault uuid=${vaultUUID} -> CID: ${pinataCid}`)
+      logger.info(`[CDR] [FALLBACK] Unsealing vault uuid=${vaultUUID} -> CID: ${pinataCid}`)
       return pinataCid
     }
 

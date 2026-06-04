@@ -1,4 +1,32 @@
 import 'dotenv/config'
+import fs from 'fs'
+import path from 'path'
+
+// Monkeypatch fs.readFileSync to locate the CDR SDK WASM file in Vercel environment
+const originalReadFileSync = fs.readFileSync
+fs.readFileSync = function (pathOrFd: any, options?: any): any {
+  const strPath = typeof pathOrFd === 'object' && pathOrFd !== null && 'href' in pathOrFd ? pathOrFd.href : String(pathOrFd)
+  if (strPath && strPath.endsWith('cb-mpc-tdh2.wasm')) {
+    const potentialPaths = [
+      path.resolve(process.cwd(), 'backend/node_modules/@piplabs/cdr-crypto/dist/wasm/cb-mpc-tdh2.wasm'),
+      path.resolve(process.cwd(), 'node_modules/@piplabs/cdr-crypto/dist/wasm/cb-mpc-tdh2.wasm'),
+      path.resolve(__dirname, '../../node_modules/@piplabs/cdr-crypto/dist/wasm/cb-mpc-tdh2.wasm'),
+      path.resolve(__dirname, '../../../node_modules/@piplabs/cdr-crypto/dist/wasm/cb-mpc-tdh2.wasm'),
+      path.resolve(__dirname, '../node_modules/@piplabs/cdr-crypto/dist/wasm/cb-mpc-tdh2.wasm'),
+      path.resolve(__dirname, 'cb-mpc-tdh2.wasm'),
+    ]
+    for (const p of potentialPaths) {
+      if (fs.existsSync(p)) {
+        try {
+          return originalReadFileSync(p, options)
+        } catch (e) {
+          // try next path
+        }
+      }
+    }
+  }
+  return originalReadFileSync.apply(this, arguments as any)
+}
 import express from 'express'
 import { CONFIG } from './config/constants'
 import { securityHeaders, corsMiddleware, generalRateLimit, requestLogger, stripResponseHeaders } from './middleware/security'
@@ -19,6 +47,7 @@ app.use(express.json({ limit: '1mb' }))
 app.use(express.urlencoded({ extended: false, limit: '1mb' }))
 app.use(generalRateLimit)
 app.use(requestLogger)
+
 
 app.get('/api/health', async (_req, res) => {
   let teeAddress = 'initialising...'

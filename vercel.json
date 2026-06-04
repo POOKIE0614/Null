@@ -8,7 +8,12 @@
     },
     {
       "src": "backend/src/index.ts",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": [
+          "backend/node_modules/@piplabs/cdr-crypto/dist/wasm/cb-mpc-tdh2.wasm"
+        ]
+      }
     }
   ],
   "routes": [
