@@ -8,7 +8,7 @@ export const CONFIG = {
   FRAGMENTS_TOTAL: parseInt(process.env.FRAGMENTS_TOTAL ?? '10', 10),
   FRAGMENTS_THRESHOLD: parseInt(process.env.FRAGMENTS_THRESHOLD ?? '6', 10),
   CHUNK_SIZE_BYTES: parseInt(process.env.CHUNK_SIZE_KB ?? '64', 10) * 1024,
-  DATA_DIR: process.env.DATA_DIR ?? './src/data',
+  DATA_DIR: process.env.DATA_DIR ?? (process.env.VERCEL ? '/tmp/data' : './src/data'),
   STORY_PROVIDER: process.env.STORY_PROVIDER ?? 'mock',
   ARWEAVE_PROVIDER: process.env.ARWEAVE_PROVIDER ?? 'mock',
 
