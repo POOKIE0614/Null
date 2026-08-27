@@ -132,19 +132,19 @@ function useScrollRatio() {
 /* ═══════════════════════════════════════════════════════════════════════
    §4  DESIGN SYSTEM CONTEXT (APPLE BRAND TOKENS)
    ═══════════════════════════════════════════════════════════════════════ */
-const ACCENT = '#fdfdfd' // Action Blue
-const ACCENT_DEEP = '#0071e3' // Focus Blue
-const ACCENT_GLOW = 'rgba(0, 102, 204, 0.15)'
-const BG_DARK = '#fdfdfd' // Ink / Dark Tile
-const BG_CARD = '#1a1a1a' // Pure White Canvas
-const BG_SURFACE = '#111111' // Parchment Off-White
-const BORDER = '1px solid #222222' // Hairline
-const BORDER_ACCENT = '1px solid #fdfdfd'
+const ACCENT = '#fdfdfd'
+const ACCENT_DEEP = '#7D39EC'
+const ACCENT_GLOW = 'rgba(125, 57, 236, 0.25)'
+const BG_DARK = '#060606'
+const BG_CARD = '#111111'
+const BG_SURFACE = '#0d0d0d'
+const BORDER = '1px solid #222222'
+const BORDER_ACCENT = '1px solid #333333'
 const TEXT = {
-  primary: '#fdfdfd', // Near-Black
-  secondary: '#333333', // Muted Ink
-  muted: '#7a7a7a', // Slate Muted
-  dim: '#71717a', // Light Muted
+  primary: '#fdfdfd',
+  secondary: '#d4d4d8',
+  muted: '#a1a1aa',
+  dim: '#71717a',
   dark: '#fdfdfd',
 }
 
@@ -1041,15 +1041,15 @@ function WalletButton({ onConnect, onDisconnect }: { onConnect?: (a: string) => 
         display: 'flex',
         alignItems: 'center',
         gap: 6,
-        padding: '6px 14px',
+        padding: '8px 16px',
         background: '#fdfdfd',
-        borderRadius: '9999px',
+        borderRadius: 2,
         cursor: 'pointer',
         border: 'none',
       }}
       className="btn-press"
     >
-      <span className="font-tech" style={{ fontSize: 11, color: '#1a1a1a', fontWeight: 500 }}>CONNECT WALLET</span>
+      <span className="font-tech" style={{ fontSize: 11, color: '#060606', fontWeight: 700, letterSpacing: '0.05em' }}>CONNECT WALLET</span>
     </button>
   )
 
@@ -1061,37 +1061,38 @@ function WalletButton({ onConnect, onDisconnect }: { onConnect?: (a: string) => 
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          padding: '6px 14px',
-          background: wrongChain ? '#f43f5e0d' : '#111111',
-          border: wrongChain ? '1px solid #f43f5e50' : '1px solid #333333',
+          padding: '8px 16px',
+          background: wrongChain ? '#f43f5e15' : '#111111',
+          border: wrongChain ? '1px solid #f43f5e' : '1px solid #333333',
           cursor: 'pointer',
-          borderRadius: '9999px',
+          borderRadius: 2,
         }}
         className="btn-press"
       >
         <span className="anim-pulse" style={{ width: 6, height: 6, borderRadius: '50%', background: wrongChain ? '#f43f5e' : '#10b981' }} />
-        <span className="font-tech" style={{ fontSize: 11, color: wrongChain ? '#f43f5e' : '#fdfdfd' }}>{wrongChain ? 'WRONG NETWORK' : fmt.addr(address!)}</span>
-        <span style={{ color: '#71717a', fontSize: 10, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▾</span>
+        <span className="font-tech" style={{ fontSize: 11, color: wrongChain ? '#f43f5e' : '#fdfdfd', fontWeight: 600 }}>{wrongChain ? 'WRONG NETWORK' : fmt.addr(address!)}</span>
+        <span style={{ color: '#a1a1aa', fontSize: 10, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▾</span>
       </button>
       {open && (
-        <div className="frosted-glass" style={{
+        <div style={{
           position: 'absolute',
           right: 0,
-          top: 36,
+          top: 42,
           width: 280,
-          border: '1px solid #222222',
-          borderRadius: '14px',
+          background: '#0d0d0d',
+          border: '1px solid #333333',
+          borderRadius: 2,
           zIndex: 200,
-          boxShadow: `rgba(0, 0, 0, 0.08) 0px 8px 24px`,
+          boxShadow: `rgba(0, 0, 0, 0.5) 0px 12px 32px`,
           overflow: 'hidden',
         }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid #222222' }}>
-            <div className="font-tech" style={{ fontSize: 10, color: '#71717a', marginBottom: 6 }}>CONNECTED ADDRESS</div>
+            <div className="font-tech" style={{ fontSize: 10, color: '#a1a1aa', marginBottom: 6 }}>CONNECTED ADDRESS</div>
             <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#fdfdfd', wordBreak: 'break-all', marginBottom: 6 }}>{address}</div>
-            <div style={{ fontSize: 11, color: wrongChain ? '#f43f5e' : '#7a7a7a' }}>{chain?.name ?? 'Unknown chain'}</div>
+            <div style={{ fontSize: 11, color: wrongChain ? '#f43f5e' : '#a1a1aa' }}>{chain?.name ?? 'Unknown chain'}</div>
             {balanceData && (
-              <div style={{ marginTop: 10, padding: '8px 12px', background: '#111111', borderRadius: 8, border: '1px solid #222222' }}>
-                <span className="font-tech" style={{ fontSize: 9, color: '#71717a' }}>BALANCE&nbsp;&nbsp;</span>
+              <div style={{ marginTop: 10, padding: '8px 12px', background: '#161616', borderRadius: 2, border: '1px solid #282828' }}>
+                <span className="font-tech" style={{ fontSize: 9, color: '#a1a1aa' }}>BALANCE&nbsp;&nbsp;</span>
                 <span style={{ fontFamily: 'monospace', fontSize: 13, color: '#fdfdfd', fontWeight: 600 }}>
                   {parseFloat(balanceData.formatted).toFixed(4)} {balanceData.symbol}
                 </span>
@@ -1100,7 +1101,7 @@ function WalletButton({ onConnect, onDisconnect }: { onConnect?: (a: string) => 
             {wrongChain && (
               <button
                 onClick={handleSwitchNetwork}
-                style={{ marginTop: 10, width: '100%', padding: '8px 12px', background: '#f43f5e', border: 'none', fontSize: 12, color: '#1a1a1a', cursor: 'pointer', borderRadius: 8 }}
+                style={{ marginTop: 10, width: '100%', padding: '8px 12px', background: '#f43f5e', border: 'none', fontSize: 12, color: '#ffffff', fontWeight: 600, cursor: 'pointer', borderRadius: 2 }}
               >
                 SWITCH TO STORY AENEID
               </button>
@@ -1630,20 +1631,20 @@ function AssetModal({ asset, walletAddress, onClose, onLicensed }: { asset: Asse
 
             {reshuffleLogs.length > 0 && (
               <div style={{
-                background: '#fdfdfd',
-                color: '#111111',
+                background: '#060606',
+                color: '#fdfdfd',
                 fontFamily: 'monospace',
-                fontSize: 10,
+                fontSize: 11,
                 padding: 12,
-                borderRadius: 8,
+                borderRadius: 2,
                 maxHeight: 120,
                 overflowY: 'auto',
                 marginBottom: 12,
-                border: '1px solid #3a3a3c',
+                border: '1px solid #2e2e2e',
                 textAlign: 'left'
               }}>
                 {reshuffleLogs.map((log, idx) => (
-                  <div key={idx} style={{ color: log.includes('ERROR') || log.includes('failed') ? '#ff453a' : log.includes('complete') || log.includes('successfully') ? '#30d158' : '#111111', marginBottom: 4 }}>
+                  <div key={idx} style={{ color: log.includes('ERROR') || log.includes('failed') ? '#ff453a' : log.includes('complete') || log.includes('successfully') ? '#30d158' : '#d4d4d8', marginBottom: 4 }}>
                     {log}
                   </div>
                 ))}
@@ -2168,7 +2169,7 @@ function VaultPage({
         </div>
 
         {/* Tab Selector Segmented Control */}
-        <div style={{ display: 'flex', gap: 2, background: '#e3e3e9', border: '1px solid #333333', borderRadius: '10px', padding: 3, marginBottom: 32 }}>
+        <div style={{ display: 'flex', gap: 4, background: '#0a0a0a', border: '1px solid #222222', borderRadius: 4, padding: 4, marginBottom: 32 }}>
           {[
             { key: 'upload', label: 'Register & Fragment IP' },
             { key: 'assets', label: 'My Registered Assets' },
@@ -2179,16 +2180,18 @@ function VaultPage({
               onClick={() => setTab(t.key)}
               style={{
                 flex: 1,
-                padding: '8px 16px',
-                background: tab === t.key ? '#1a1a1a' : 'transparent',
-                border: 'none',
-                borderRadius: '8px',
+                padding: '10px 16px',
+                background: tab === t.key ? '#222222' : 'transparent',
+                border: tab === t.key ? '1px solid #333333' : '1px solid transparent',
+                borderRadius: 2,
                 cursor: 'pointer',
                 fontSize: 13,
-                fontWeight: tab === t.key ? 500 : 400,
-                color: tab === t.key ? '#fdfdfd' : '#71717a',
-                boxShadow: tab === t.key ? 'rgba(0, 0, 0, 0.04) 0px 3px 8px' : 'none',
-                transition: 'all 0.2s cubic-bezier(0.25, 1, 0.5, 1)',
+                fontFamily: "'Poppins', sans-serif",
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                fontWeight: tab === t.key ? 700 : 500,
+                color: tab === t.key ? '#fdfdfd' : '#888888',
+                transition: 'all 0.2s ease',
               }}
               className="btn-press"
             >
@@ -2578,31 +2581,32 @@ function ExplorePage({
             style={{
               flex: 1,
               minWidth: 280,
-              background: '#1a1a1a',
-              border: '1px solid #333333',
-              borderRadius: '9999px',
-              padding: '10px 20px',
+              background: '#111111',
+              border: '1px solid #2e2e2e',
+              borderRadius: 2,
+              padding: '12px 18px',
               fontSize: 14,
               color: '#fdfdfd',
-              boxShadow: 'rgba(0, 0, 0, 0.02) 0px 1px 2px inset',
             }}
           />
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {filters.map(f => (
               <button
                 key={f.key}
                 onClick={() => setFilter(f.key)}
                 style={{
-                  padding: '6px 14px',
-                  background: filter === f.key ? '#fdfdfd' : '#1a1a1a',
-                  border: filter === f.key ? '1px solid #fdfdfd' : '1px solid #333333',
-                  borderRadius: '9999px',
+                  padding: '8px 16px',
+                  background: filter === f.key ? '#fdfdfd' : '#111111',
+                  border: filter === f.key ? '1px solid #fdfdfd' : '1px solid #2e2e2e',
+                  borderRadius: 2,
                   cursor: 'pointer',
                   fontSize: 12,
-                  fontWeight: 500,
-                  color: filter === f.key ? '#1a1a1a' : '#a1a1aa',
-                  boxShadow: 'rgba(0, 0, 0, 0.02) 0px 1px 2px',
-                  transition: 'all 0.2s cubic-bezier(0.25, 1, 0.5, 1)',
+                  fontFamily: "'Poppins', sans-serif",
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  fontWeight: filter === f.key ? 700 : 500,
+                  color: filter === f.key ? '#060606' : '#a1a1aa',
+                  transition: 'all 0.2s ease',
                 }}
                 className="btn-press"
               >
