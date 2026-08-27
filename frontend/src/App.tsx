@@ -311,68 +311,234 @@ const fmt = {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   §8  ATMOSPHERIC VERTICAL GRID & PARTICLES
+   §8  ATMOSPHERIC PERSISTENT SCROLL-LINKED QUANTUM LATTICE (FULL VIEWPORT)
    ═══════════════════════════════════════════════════════════════════════ */
 function ParticleField() {
-  return null;
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    let animId: number
+    let width = (canvas.width = window.innerWidth)
+    let height = (canvas.height = window.innerHeight)
+
+    const handleResize = () => {
+      if (!canvas) return
+      width = canvas.width = window.innerWidth
+      height = canvas.height = window.innerHeight
+    }
+    window.addEventListener('resize', handleResize)
+
+    // Interactive cursor coordinates with smooth lerp
+    const mouse = { x: -1000, y: -1000, targetX: -1000, targetY: -1000 }
+    const handleMouseMove = (e: MouseEvent) => {
+      mouse.targetX = e.clientX
+      mouse.targetY = e.clientY
+    }
+    window.addEventListener('mousemove', handleMouseMove, { passive: true })
+
+    // Real-time Scroll velocity physics
+    let lastScrollY = window.scrollY
+    let scrollVel = 0
+    let smoothScrollVel = 0
+
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY
+      scrollVel = currentScrollY - lastScrollY
+      lastScrollY = currentScrollY
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+
+    // Cryptographic shard particles
+    interface Particle {
+      x: number; y: number; z: number
+      vx: number; vy: number
+      size: number
+      rot: number; rotSpeed: number
+      glyph: string
+      opacity: number
+      pulsePhase: number
+    }
+
+    const GLYPHS = ['∅', 'λ', '0x', '∑', 'K/N', 'SSS', '⊕', '∇', '1', '0', '∂', '∫']
+    const count = Math.min(50, Math.floor(window.innerWidth / 28))
+    const particles: Particle[] = []
+
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        z: 0.25 + Math.random() * 0.75, // 3D depth layer
+        vx: (Math.random() - 0.5) * 0.35,
+        vy: (Math.random() - 0.5) * 0.35,
+        size: 2.5 + Math.random() * 4.5,
+        rot: Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 0.025,
+        glyph: Math.random() > 0.65 ? GLYPHS[Math.floor(Math.random() * GLYPHS.length)] : '',
+        opacity: 0.15 + Math.random() * 0.35,
+        pulsePhase: Math.random() * Math.PI * 2,
+      })
+    }
+
+    let t = 0
+    const render = () => {
+      t += 0.016
+      // Smooth scroll velocity damping
+      smoothScrollVel += (scrollVel - smoothScrollVel) * 0.12
+      scrollVel *= 0.90
+
+      // Smooth mouse interpolation
+      mouse.x += (mouse.targetX - mouse.x) * 0.08
+      mouse.y += (mouse.targetY - mouse.y) * 0.08
+
+      ctx.clearRect(0, 0, width, height)
+
+      // Geometric background grid responsive to scroll
+      const gridSpacing = 90
+      const scrollOffset = (lastScrollY * 0.25) % gridSpacing
+      ctx.strokeStyle = 'rgba(253, 253, 253, 0.02)'
+      ctx.lineWidth = 0.5
+
+      for (let x = 0; x < width; x += gridSpacing) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke()
+      }
+      for (let y = -scrollOffset; y < height; y += gridSpacing) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke()
+      }
+
+      // Update & Render particle lattice
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i]
+
+        // Kinetic movement + scroll inertia scaled by 3D depth
+        p.x += p.vx
+        p.y += p.vy - smoothScrollVel * 0.08 * p.z
+        p.rot += p.rotSpeed
+
+        // Mouse magnetic repulsion/lens field
+        const dx = mouse.x - p.x
+        const dy = mouse.y - p.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist < 160 && dist > 0) {
+          const force = (1 - dist / 160) * 1.8
+          p.x -= (dx / dist) * force * p.z
+          p.y -= (dy / dist) * force * p.z
+        }
+
+        // Screen edge loop
+        if (p.x < -30) p.x = width + 30
+        if (p.x > width + 30) p.x = -30
+        if (p.y < -30) p.y = height + 30
+        if (p.y > height + 30) p.y = -30
+
+        // Constellation laser connections between nearby shards
+        for (let j = i + 1; j < particles.length; j++) {
+          const p2 = particles[j]
+          const distBetween = Math.hypot(p.x - p2.x, p.y - p2.y)
+          if (distBetween < 120) {
+            const lineAlpha = (1 - distBetween / 120) * 0.14 * Math.min(p.z, p2.z) * (1 + Math.abs(smoothScrollVel) * 0.05)
+            ctx.strokeStyle = `rgba(253, 253, 253, ${lineAlpha})`
+            ctx.lineWidth = 0.6
+            ctx.beginPath()
+            ctx.moveTo(p.x, p.y)
+            ctx.lineTo(p2.x, p2.y)
+            ctx.stroke()
+          }
+        }
+
+        // Draw individual shard
+        ctx.save()
+        ctx.translate(p.x, p.y)
+        ctx.rotate(p.rot)
+
+        const pulse = 0.8 + Math.sin(t * 2 + p.pulsePhase) * 0.2
+        const baseAlpha = p.opacity * pulse * (0.5 + Math.min(0.5, Math.abs(smoothScrollVel) * 0.08))
+        const sz = p.size * p.z
+
+        ctx.fillStyle = `rgba(253, 253, 253, ${baseAlpha * 0.2})`
+        ctx.strokeStyle = `rgba(253, 253, 253, ${baseAlpha})`
+        ctx.lineWidth = 0.8
+
+        ctx.fillRect(-sz, -sz, sz * 2, sz * 2)
+        ctx.strokeRect(-sz, -sz, sz * 2, sz * 2)
+
+        // Draw cryptographic glyph
+        if (p.glyph && p.z > 0.45) {
+          ctx.fillStyle = `rgba(125, 57, 236, ${Math.min(0.85, baseAlpha * 1.6)})`
+          ctx.font = `700 ${Math.round(9 * p.z)}px "JetBrains Mono", monospace`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText(p.glyph, 0, sz + 9)
+        }
+
+        ctx.restore()
+      }
+
+      animId = requestAnimationFrame(render)
+    }
+
+    render()
+
+    return () => {
+      cancelAnimationFrame(animId)
+      window.removeEventListener('resize', handleResize)
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('scroll', handleScroll)
+    }
+  }, [])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        width: '100vw',
+        height: '100vh',
+        pointerEvents: 'none',
+        zIndex: 0,
+      }}
+    />
+  )
 }
 
 function InfinityLine() {
-  return null;
+  const [scrollY, setScrollY] = useState(0)
+  useEffect(() => {
+    const fn = () => setScrollY(window.scrollY)
+    window.addEventListener('scroll', fn, { passive: true })
+    return () => window.removeEventListener('scroll', fn)
+  }, [])
+
+  const opacity = Math.min(0.4, scrollY / 400)
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 1,
+      background: 'linear-gradient(90deg, transparent 0%, #7D39EC 30%, #fdfdfd 50%, #7D39EC 70%, transparent 100%)',
+      opacity,
+      pointerEvents: 'none',
+      zIndex: 101,
+      transition: 'opacity 0.2s ease',
+    }} />
+  )
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   §9  VOID DISSOLVE — DATA FRAGMENTATION VISUALIZER
+   §9  3D GYROSCOPIC CRYPTOGRAPHIC CORE (SCROLL-DYNAMIC)
    ═══════════════════════════════════════════════════════════════════════ */
-
 function ShardSphere3D({ progress, phase }: { progress: number; phase: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const frameRef = useRef(0)
-  const timeRef = useRef(0)
-  const particlesRef = useRef<Array<{
-    baseX: number; baseY: number;
-    x: number; y: number;
-    vx: number; vy: number;
-    size: number; rotation: number;
-    rotSpeed: number; delay: number;
-    opacity: number; dissolved: boolean;
-  }>>([])
-
-  // Initialize particles as a structured grid
-  useEffect(() => {
-    const particles: typeof particlesRef.current = []
-    const gridSize = 4
-    const cellSize = 28
-    const offsetX = 140 - (gridSize * cellSize) / 2
-    const offsetY = 140 - (gridSize * cellSize) / 2
-
-    for (let row = 0; row < gridSize; row++) {
-      for (let col = 0; col < gridSize; col++) {
-        // Skip some cells to create an interesting shape (cross/diamond pattern)
-        const dist = Math.abs(row - 1.5) + Math.abs(col - 1.5)
-        if (dist > 3) continue
-
-        const bx = offsetX + col * cellSize + cellSize / 2
-        const by = offsetY + row * cellSize + cellSize / 2
-        const angle = Math.atan2(by - 140, bx - 140)
-        const speed = 0.3 + Math.random() * 0.6
-
-        particles.push({
-          baseX: bx, baseY: by,
-          x: bx, y: by,
-          vx: Math.cos(angle + (Math.random() - 0.5) * 1.2) * speed,
-          vy: Math.sin(angle + (Math.random() - 0.5) * 1.2) * speed,
-          size: 8 + Math.random() * 6,
-          rotation: Math.random() * Math.PI * 2,
-          rotSpeed: (Math.random() - 0.5) * 0.04,
-          delay: dist * 0.12 + Math.random() * 0.1,
-          opacity: 1,
-          dissolved: false,
-        })
-      }
-    }
-    particlesRef.current = particles
-  }, [])
+  const angleRef = useRef({ x: 0.3, y: 0, z: 0 })
+  const lastScrollY = useRef(window.scrollY)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -381,138 +547,200 @@ function ShardSphere3D({ progress, phase }: { progress: number; phase: string })
     if (!ctx) return
 
     const dpr = window.devicePixelRatio || 1
-    canvas.width = 280 * dpr
-    canvas.height = 280 * dpr
+    canvas.width = 300 * dpr
+    canvas.height = 300 * dpr
     ctx.scale(dpr, dpr)
+
+    // Generate 10 satellite shard coordinates in 3D spherical Fibonacci distribution
+    const count = 10
+    const satelliteNodes: { x: number; y: number; z: number; id: number }[] = []
+    for (let i = 0; i < count; i++) {
+      const y = 1 - (i / (count - 1)) * 2
+      const radius = Math.sqrt(1 - y * y)
+      const goldenAngle = Math.PI * (3 - Math.sqrt(5))
+      const theta = i * goldenAngle
+      satelliteNodes.push({
+        x: Math.cos(theta) * radius * 90,
+        y: y * 90,
+        z: Math.sin(theta) * radius * 90,
+        id: i + 1,
+      })
+    }
 
     const isIdle = phase === 'idle'
     const isComplete = phase === 'complete'
     const isFailed = phase === 'failed'
-    const dissolveAmount = isIdle ? 0 : Math.min(1, progress / 100)
+    const activeShards = isIdle ? 10 : Math.min(10, Math.round((progress / 100) * 10))
 
-    const animate = () => {
-      timeRef.current += 0.016
-      const t = timeRef.current
-      ctx.clearRect(0, 0, 280, 280)
+    const render = () => {
+      // Scroll velocity dynamics
+      const currentScroll = window.scrollY
+      const scrollDiff = currentScroll - lastScrollY.current
+      lastScrollY.current = currentScroll
 
-      const particles = particlesRef.current
-      const accentR = isComplete ? 16 : isFailed ? 239 : 253
-      const accentG = isComplete ? 185 : isFailed ? 68 : 253
-      const accentB = isComplete ? 129 : isFailed ? 68 : 253
+      // Continuous Gyroscopic rotation
+      const spinSpeed = 0.012 + Math.abs(scrollDiff) * 0.004
+      angleRef.current.x += spinSpeed * 0.6
+      angleRef.current.y += spinSpeed
+      angleRef.current.z += spinSpeed * 0.4
 
-      // Draw subtle grid lines in background
-      ctx.strokeStyle = 'rgba(51, 51, 51, 0.4)'
-      ctx.lineWidth = 0.5
-      for (let i = 0; i < 280; i += 28) {
-        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 280); ctx.stroke()
-        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(280, i); ctx.stroke()
-      }
+      const ax = angleRef.current.x
+      const ay = angleRef.current.y
+      const az = angleRef.current.z
 
-      // Center void circle (always present)
-      const pulseR = 18 + Math.sin(t * 2) * 3
-      const gradient = ctx.createRadialGradient(140, 140, 0, 140, 140, pulseR + 20)
-      gradient.addColorStop(0, `rgba(${accentR}, ${accentG}, ${accentB}, 0.08)`)
-      gradient.addColorStop(0.5, `rgba(${accentR}, ${accentG}, ${accentB}, 0.03)`)
-      gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
-      ctx.fillStyle = gradient
-      ctx.beginPath(); ctx.arc(140, 140, pulseR + 20, 0, Math.PI * 2); ctx.fill()
+      ctx.clearRect(0, 0, 300, 300)
+      const cx = 150
+      const cy = 150
 
-      // Draw connection lines from center to each particle
-      for (const p of particles) {
-        const effectiveDissolve = Math.max(0, Math.min(1, (dissolveAmount - p.delay) / (1 - p.delay)))
+      const accentColor = isComplete ? '#10b981' : isFailed ? '#ef4444' : '#fdfdfd'
+      const purpleAccent = '#7D39EC'
 
-        if (effectiveDissolve > 0 && effectiveDissolve < 1 && !isIdle) {
-          const lx = p.baseX + (p.vx * effectiveDissolve * 180)
-          const ly = p.baseY + (p.vy * effectiveDissolve * 180)
-          const lineOp = Math.max(0, 0.15 * (1 - effectiveDissolve))
-          ctx.strokeStyle = `rgba(${accentR}, ${accentG}, ${accentB}, ${lineOp})`
-          ctx.lineWidth = 0.5
-          ctx.setLineDash([2, 4])
-          ctx.beginPath(); ctx.moveTo(140, 140); ctx.lineTo(lx, ly); ctx.stroke()
-          ctx.setLineDash([])
+      // 3D Matrix Projection Helper
+      const project = (x: number, y: number, z: number) => {
+        // Rotate around Y
+        const cosY = Math.cos(ay), sinY = Math.sin(ay)
+        const x1 = x * cosY - z * sinY
+        const z1 = x * sinY + z * cosY
+
+        // Rotate around X
+        const cosX = Math.cos(ax), sinX = Math.sin(ax)
+        const y2 = y * cosX - z1 * sinX
+        const z2 = y * sinX + z1 * cosX
+
+        // Rotate around Z
+        const cosZ = Math.cos(az), sinZ = Math.sin(az)
+        const x3 = x1 * cosZ - y2 * sinZ
+        const y3 = x1 * sinZ + y2 * cosZ
+
+        const cameraDist = 280
+        const scale = cameraDist / (cameraDist + z2)
+        return {
+          px: cx + x3 * scale,
+          py: cy + y3 * scale,
+          scale,
+          z: z2,
         }
       }
 
-      // Draw each data fragment
-      for (const p of particles) {
-        const effectiveDissolve = isIdle ? 0 : isComplete ? 0 : Math.max(0, Math.min(1, (dissolveAmount - p.delay) / (1 - p.delay)))
+      // Draw 3 Nested Gyroscopic Rings
+      const drawRing = (radius: number, rotAxis: 'x' | 'y' | 'z', angle: number, color: string, alpha: number) => {
+        ctx.beginPath()
+        ctx.strokeStyle = color
+        ctx.lineWidth = 1.2
+        ctx.globalAlpha = alpha
 
-        let px: number, py: number, opacity: number, rot: number
-
-        if (isIdle || isComplete) {
-          // Assembled state: gentle floating
-          const floatX = Math.sin(t * 0.8 + p.baseX * 0.1) * 2
-          const floatY = Math.cos(t * 0.6 + p.baseY * 0.1) * 2
-          px = p.baseX + floatX
-          py = p.baseY + floatY
-          opacity = isComplete ? 1 : 0.7 + Math.sin(t + p.baseX) * 0.3
-          rot = Math.sin(t * 0.3 + p.delay * 10) * 0.1
-        } else {
-          // Dissolving: fragments scatter outward
-          px = p.baseX + p.vx * effectiveDissolve * 180
-          py = p.baseY + p.vy * effectiveDissolve * 180
-          opacity = Math.max(0, 1 - effectiveDissolve * 1.2)
-          rot = p.rotation + effectiveDissolve * p.rotSpeed * 60
+        const steps = 64
+        for (let i = 0; i <= steps; i++) {
+          const theta = (i / steps) * Math.PI * 2
+          let rx = 0, ry = 0, rz = 0
+          if (rotAxis === 'x') {
+            rx = 0
+            ry = Math.sin(theta) * radius
+            rz = Math.cos(theta) * radius
+          } else if (rotAxis === 'y') {
+            rx = Math.cos(theta) * radius
+            ry = 0
+            rz = Math.sin(theta) * radius
+          } else {
+            rx = Math.cos(theta) * radius
+            ry = Math.sin(theta) * radius
+            rz = 0
+          }
+          const p = project(rx, ry, rz)
+          if (i === 0) ctx.moveTo(p.px, p.py)
+          else ctx.lineTo(p.px, p.py)
         }
+        ctx.stroke()
+      }
 
-        if (opacity <= 0) continue
+      // Render outer rings with depth
+      drawRing(118, 'x', ax, purpleAccent, 0.3)
+      drawRing(102, 'y', ay, '#fdfdfd', 0.4)
+      drawRing(84, 'z', az, purpleAccent, 0.5)
 
+      // Project & sort satellite shards by depth z
+      const projectedNodes = satelliteNodes.map(node => {
+        const p = project(node.x, node.y, node.z)
+        return { ...node, ...p }
+      }).sort((a, b) => a.z - b.z)
+
+      // Telemetry laser beams from central singularity to each active shard
+      projectedNodes.forEach(node => {
+        const isActive = node.id <= activeShards
+        ctx.globalAlpha = isActive ? 0.35 : 0.08
+        ctx.strokeStyle = isActive ? accentColor : '#333333'
+        ctx.lineWidth = isActive ? 1 : 0.5
+        ctx.setLineDash(isActive ? [4, 4] : [2, 6])
+        ctx.beginPath()
+        ctx.moveTo(cx, cy)
+        ctx.lineTo(node.px, node.py)
+        ctx.stroke()
+        ctx.setLineDash([])
+      })
+
+      // Draw Orbiting Cryptographic Shard Nodes
+      projectedNodes.forEach(node => {
+        const isActive = node.id <= activeShards
         ctx.save()
-        ctx.translate(px, py)
-        ctx.rotate(rot)
-        ctx.globalAlpha = opacity
+        ctx.translate(node.px, node.py)
+        ctx.globalAlpha = isActive ? 1 : 0.3
 
-        // Fragment body — sharp rectangles
-        const half = p.size / 2
-        ctx.fillStyle = isComplete
-          ? `rgba(${accentR}, ${accentG}, ${accentB}, 0.15)`
-          : 'rgba(253, 253, 253, 0.06)'
-        ctx.strokeStyle = `rgba(${accentR}, ${accentG}, ${accentB}, ${isIdle ? 0.2 : 0.4 + effectiveDissolve * 0.4})`
-        ctx.lineWidth = 1
-        ctx.fillRect(-half, -half, p.size, p.size)
-        ctx.strokeRect(-half, -half, p.size, p.size)
+        // Shard Block
+        const sz = Math.max(3, 6 * node.scale)
+        ctx.fillStyle = isActive ? '#060606' : '#111111'
+        ctx.strokeStyle = isActive ? accentColor : '#333333'
+        ctx.lineWidth = isActive ? 1.5 : 0.8
 
-        // Inner data line pattern
-        ctx.strokeStyle = `rgba(${accentR}, ${accentG}, ${accentB}, ${0.1 + (isIdle ? 0 : effectiveDissolve * 0.2)})`
-        ctx.lineWidth = 0.5
-        for (let li = -half + 3; li < half; li += 3) {
-          ctx.beginPath()
-          ctx.moveTo(-half + 1, li)
-          ctx.lineTo(-half + 1 + (p.size - 2) * (0.3 + Math.sin(li + t) * 0.3), li)
-          ctx.stroke()
+        ctx.fillRect(-sz, -sz, sz * 2, sz * 2)
+        ctx.strokeRect(-sz, -sz, sz * 2, sz * 2)
+
+        // Shard label
+        if (isActive) {
+          ctx.fillStyle = accentColor
+          ctx.font = '700 8px "JetBrains Mono", monospace'
+          ctx.textAlign = 'center'
+          ctx.fillText(`S${node.id}`, 0, -sz - 4)
         }
 
         ctx.restore()
-      }
+      })
 
-      // Center void symbol (∅)
+      // Center Void Singularity Core
       ctx.globalAlpha = 1
-      ctx.fillStyle = '#060606'
-      ctx.beginPath(); ctx.arc(140, 140, 22, 0, Math.PI * 2); ctx.fill()
-      ctx.strokeStyle = `rgba(${accentR}, ${accentG}, ${accentB}, 0.6)`
-      ctx.lineWidth = 1.5
-      ctx.beginPath(); ctx.arc(140, 140, 22, 0, Math.PI * 2); ctx.stroke()
+      const corePulse = 26 + Math.sin(ay * 2.5) * 3
 
-      // Center text
-      ctx.fillStyle = `rgb(${accentR}, ${accentG}, ${accentB})`
-      ctx.font = '700 10px "Poppins", sans-serif'
+      // Radial Glow Horizon
+      const radGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, corePulse + 20)
+      radGlow.addColorStop(0, 'rgba(125, 57, 236, 0.45)')
+      radGlow.addColorStop(0.6, 'rgba(253, 253, 253, 0.08)')
+      radGlow.addColorStop(1, 'rgba(0, 0, 0, 0)')
+      ctx.fillStyle = radGlow
+      ctx.beginPath()
+      ctx.arc(cx, cy, corePulse + 20, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Core Chassis
+      ctx.fillStyle = '#060606'
+      ctx.strokeStyle = accentColor
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.arc(cx, cy, corePulse, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+
+      // Inner Core Status Text
+      ctx.fillStyle = accentColor
+      ctx.font = '700 11px "Poppins", sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      const label = isComplete ? '✓' : isFailed ? '✗' : !isIdle ? `${Math.round(progress)}%` : '∅'
-      ctx.fillText(label, 140, 141)
+      const label = isComplete ? 'SEALED' : isFailed ? 'ERR' : isIdle ? 'NULL' : `${Math.round(progress)}%`
+      ctx.fillText(label, cx, cy + 1)
 
-      // Outer ring pulse
-      if (!isIdle) {
-        const ringOpacity = 0.1 + Math.sin(t * 3) * 0.05
-        ctx.strokeStyle = `rgba(${accentR}, ${accentG}, ${accentB}, ${ringOpacity})`
-        ctx.lineWidth = 1
-        ctx.beginPath(); ctx.arc(140, 140, 60 + Math.sin(t * 1.5) * 5, 0, Math.PI * 2); ctx.stroke()
-      }
-
-      frameRef.current = requestAnimationFrame(animate)
+      frameRef.current = requestAnimationFrame(render)
     }
 
-    frameRef.current = requestAnimationFrame(animate)
+    render()
+
     return () => cancelAnimationFrame(frameRef.current)
   }, [progress, phase])
 
@@ -1567,22 +1795,22 @@ function AssetModal({ asset, walletAddress, onClose, onLicensed }: { asset: Asse
 function Home({ setPage, assets }: { setPage: (p: string) => void; assets: Asset[] }) {
   const scrollY = useScrollRatio()
 
-  const heroOpacity = Math.max(0, 1 - scrollY / 600)
-  const heroScale = Math.max(0.92, 1 - scrollY / 2000)
-  const heroTranslate = scrollY * 0.15
+  const heroOpacity = Math.max(0.15, 1 - scrollY / 900)
+  const heroScale = Math.max(0.94, 1 - scrollY / 3000)
+  const heroTranslate = scrollY * 0.12
 
   const steps = [
-    { n: '01', title: 'Plaintext Intake', body: 'Files up to 100MB are loaded securely inside transient client RAM memory enclaves. No disk writing occurs.', bg: '#111111', text: '#fdfdfd', numColor: '#fdfdfd' },
-    { n: '02', title: 'Shamir SSS Shredding', body: 'The binary stream mathematically splits into 10 independent polynomial shares. No individual share holds any usable data.', bg: '#fdfdfd', text: '#1a1a1a', numColor: '#fdfdfd' },
-    { n: '03', title: 'Decentralized Scatter', body: 'Fragments disperse across global IPFS nodes via secure Pinata gateways with persistent integrity hashes.', bg: '#1a1a1a', text: '#fdfdfd', numColor: '#71717a' },
-    { n: '04', title: 'On-Chain Registration', body: 'Metadata and cryptographic location maps are sealed into Story Protocol\'s Confidential Data Rail (CDR) using global TEE DKG nodes.', bg: '#fdfdfd', text: '#1a1a1a', numColor: '#fdfdfd' },
-    { n: '05', title: 'TEE Reconstruction', body: 'Upon license verification on-chain, enclaves retrieve fragments, run Lagrange interpolation in RAM, stream the download, and dissolve.', bg: '#111111', text: '#fdfdfd', numColor: '#fdfdfd' },
+    { n: '01', title: 'Plaintext Intake', body: 'Files up to 100MB are loaded securely inside transient client RAM memory enclaves. No disk writing occurs.', numColor: '#7D39EC' },
+    { n: '02', title: 'Shamir SSS Shredding', body: 'The binary stream mathematically splits into 10 independent polynomial shares. No individual share holds any usable data.', numColor: '#fdfdfd' },
+    { n: '03', title: 'Decentralized Scatter', body: 'Fragments disperse across global IPFS nodes via secure Pinata gateways with persistent integrity hashes.', numColor: '#7D39EC' },
+    { n: '04', title: 'On-Chain Registration', body: 'Metadata and cryptographic location maps are sealed into Story Protocol\'s Confidential Data Rail (CDR) using global TEE DKG nodes.', numColor: '#fdfdfd' },
+    { n: '05', title: 'TEE Reconstruction', body: 'Upon license verification on-chain, enclaves retrieve fragments, run Lagrange interpolation in RAM, stream the download, and dissolve.', numColor: '#10b981' },
   ]
 
   const totalSize = assets.reduce((s, a) => s + a.totalSize, 0)
 
   return (
-    <div style={{ background: '#1a1a1a' }}>
+    <div style={{ background: 'transparent' }}>
       {/* Hero Section */}
       <section style={{
         position: 'relative',
@@ -1590,36 +1818,36 @@ function Home({ setPage, assets }: { setPage: (p: string) => void; assets: Asset
         display: 'flex',
         alignItems: 'center',
         overflow: 'hidden',
-        background: '#1a1a1a',
-        borderBottom: '1px solid #222222',
+        background: 'transparent',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}>
         <div style={{
           position: 'relative',
           maxWidth: 1024,
           margin: '0 auto',
           width: '100%',
-          padding: '0 24px',
+          padding: '40px 24px',
           opacity: heroOpacity,
           transform: `translateY(${heroTranslate}px) scale(${heroScale})`,
-          transition: 'opacity 0.15s ease-out',
+          transition: 'opacity 0.1s ease-out',
         }}>
           <div className="grid-hero">
             {/* Left Content */}
             <div>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: '6px 14px', borderRadius: 99, background: '#111111', border: '1px solid #222222', marginBottom: 28 }}>
-                <span className="anim-pulse" style={{ width: 6, height: 6, background: '#fdfdfd', borderRadius: '50%' }} />
-                <span className="font-tech" style={{ fontSize: 10, color: '#fdfdfd', letterSpacing: '0.15em', fontWeight: 600 }}>NULLVAULT CORE v2.0</span>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: '6px 14px', borderRadius: 2, background: '#111111', border: '1px solid #333333', marginBottom: 28 }}>
+                <span className="anim-pulse" style={{ width: 6, height: 6, background: '#7D39EC', borderRadius: '50%' }} />
+                <span className="font-tech" style={{ fontSize: 10, color: '#fdfdfd', letterSpacing: '0.15em', fontWeight: 700 }}>NULLVAULT PROTOCOL v2.0</span>
               </div>
-              <h1 className="font-display" style={{ fontSize: 'clamp(44px, 6vw, 90px)', lineHeight: 1.05, letterSpacing: '-0.03em', fontWeight: 700, color: '#fdfdfd', marginBottom: 24 }}>
+              <h1 className="font-display" style={{ fontSize: 'clamp(40px, 5.5vw, 84px)', lineHeight: 1.05, letterSpacing: '-0.03em', fontWeight: 700, color: '#fdfdfd', marginBottom: 24 }}>
                 Files that <br />
                 <span style={{ color: '#71717a' }}>do not exist</span> <br />
                 <span style={{ color: '#fdfdfd' }}>anywhere.</span>
               </h1>
-              <p className="font-body-light" style={{ fontSize: 20, color: '#a1a1aa', lineHeight: 1.6, maxWidth: 540, marginBottom: 36 }}>
+              <p className="font-body-light" style={{ fontSize: 19, color: '#a1a1aa', lineHeight: 1.6, maxWidth: 540, marginBottom: 36 }}>
                 Nothing is stored. Everything is preserved.<br />
-                Data should not exist longer than the moment it is needed.
+                Cryptographically dissolved into the void until summoned on-chain.
               </p>
-              <div style={{ display: 'flex', gap: 16 }}>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                 <Btn onClick={() => setPage('vault')} variant="primary" style={{ padding: '14px 28px' }}>
                   Open Vault ➔
                 </Btn>
@@ -1629,11 +1857,10 @@ function Home({ setPage, assets }: { setPage: (p: string) => void; assets: Asset
               </div>
             </div>
 
-            {/* Right: Math Visualization */}
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
+            {/* Right: Gyroscopic Void Reactor Core */}
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
               <div style={{ position: 'relative', width: 280, height: 280 }}>
-                {/* Visual Math Node Sphere */}
-                <ShardSphere3D progress={50 + Math.sin(scrollY / 100) * 50} phase="fragmenting" />
+                <ShardSphere3D progress={50 + Math.sin(scrollY / 120) * 50} phase="fragmenting" />
               </div>
             </div>
           </div>
@@ -1641,16 +1868,16 @@ function Home({ setPage, assets }: { setPage: (p: string) => void; assets: Asset
       </section>
 
       {/* Stats Bar */}
-      <section style={{ background: '#111111', borderBottom: '1px solid #222222', padding: '40px 24px' }}>
+      <section style={{ background: 'rgba(10, 10, 10, 0.75)', backdropFilter: 'blur(10px)', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '40px 24px' }}>
         <div className="grid-stats" style={{ maxWidth: 1024, margin: '0 auto' }}>
           {[
             ['Security Threshold', 'K = 6', '#fdfdfd'],
-            ['Total Fragments', 'N = 10', '#fdfdfd'],
+            ['Total Fragments', 'N = 10', '#7D39EC'],
             ['Active Assets', String(assets.length), '#fdfdfd'],
-            ['Encrypted Weight', fmt.bytes(totalSize), '#fdfdfd'],
+            ['Encrypted Weight', fmt.bytes(totalSize), '#10b981'],
           ].map(([k, v, col]) => (
             <div key={k as string} style={{ textAlign: 'center', padding: '16px' }}>
-              <div className="font-tech" style={{ fontSize: 10, color: '#71717a', marginBottom: 8, letterSpacing: '0.12em', fontWeight: 600 }}>{k.toUpperCase()}</div>
+              <div className="font-tech" style={{ fontSize: 10, color: '#71717a', marginBottom: 8, letterSpacing: '0.12em', fontWeight: 700 }}>{k.toUpperCase()}</div>
               <div className="font-display" style={{ fontSize: 28, fontWeight: 700, color: col }}>{v}</div>
             </div>
           ))}
@@ -1658,34 +1885,31 @@ function Home({ setPage, assets }: { setPage: (p: string) => void; assets: Asset
       </section>
 
       {/* Product Spec Gallery Rows */}
-      <section style={{ background: '#1a1a1a' }}>
-        {steps.map((s, idx) => {
-          const isDark = s.bg === '#fdfdfd'
-          return (
-            <div key={idx} style={{ background: s.bg, color: s.text, borderBottom: '1px solid #222222', padding: '80px 24px' }}>
-              <div className="grid-spec" style={{ maxWidth: 1024, margin: '0 auto' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-                  <div className="font-tech" style={{ fontSize: 64, fontWeight: 700, color: s.numColor, opacity: 0.8, letterSpacing: '-0.05em' }}>{s.n}</div>
-                  <div style={{ height: 40, width: 1, background: isDark ? '#3a3a3c' : '#333333' }} />
-                  <div className="font-tech" style={{ fontSize: 12, letterSpacing: '0.2em', color: isDark ? '#71717a' : '#a1a1aa', fontWeight: 700 }}>PHASE</div>
-                </div>
-                <div>
-                  <h3 className="font-display" style={{ fontSize: 24, fontWeight: 600, color: isDark ? '#1a1a1a' : '#fdfdfd', marginBottom: 12 }}>{s.title}</h3>
-                  <p className="font-body-light" style={{ fontSize: 16, color: isDark ? '#333333' : '#a1a1aa', lineHeight: 1.6 }}>{s.body}</p>
-                </div>
+      <section style={{ background: 'transparent' }}>
+        {steps.map((s, idx) => (
+          <div key={idx} style={{ background: idx % 2 === 0 ? 'rgba(6, 6, 6, 0.6)' : 'rgba(17, 17, 17, 0.4)', backdropFilter: 'blur(8px)', borderBottom: '1px solid rgba(255,255,255,0.05)', padding: '72px 24px' }}>
+            <div className="grid-spec" style={{ maxWidth: 1024, margin: '0 auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+                <div className="font-tech" style={{ fontSize: 56, fontWeight: 700, color: s.numColor, opacity: 0.9, letterSpacing: '-0.05em' }}>{s.n}</div>
+                <div style={{ height: 40, width: 1, background: '#333333' }} />
+                <div className="font-tech" style={{ fontSize: 11, letterSpacing: '0.2em', color: '#71717a', fontWeight: 700 }}>PHASE</div>
+              </div>
+              <div>
+                <h3 className="font-display" style={{ fontSize: 22, fontWeight: 700, color: '#fdfdfd', marginBottom: 12 }}>{s.title}</h3>
+                <p className="font-body-light" style={{ fontSize: 15, color: '#a1a1aa', lineHeight: 1.6 }}>{s.body}</p>
               </div>
             </div>
-          )
-        })}
+          </div>
+        ))}
       </section>
 
       {/* Bottom CTA Section */}
-      <section style={{ padding: '120px 24px', background: '#111111', textAlign: 'center' }}>
+      <section style={{ padding: '100px 24px', background: 'rgba(10, 10, 10, 0.85)', backdropFilter: 'blur(12px)', borderTop: '1px solid rgba(255,255,255,0.06)', textAlign: 'center' }}>
         <div style={{ maxWidth: 640, margin: '0 auto' }}>
-          <h2 className="font-display" style={{ fontSize: 36, fontWeight: 700, letterSpacing: '-0.02em', color: '#fdfdfd', marginBottom: 16 }}>
+          <h2 className="font-display" style={{ fontSize: 34, fontWeight: 700, letterSpacing: '-0.02em', color: '#fdfdfd', marginBottom: 16 }}>
             Ready to secure your intellectual properties?
           </h2>
-          <p className="font-body-light" style={{ fontSize: 18, color: '#a1a1aa', marginBottom: 32, lineHeight: 1.5 }}>
+          <p className="font-body-light" style={{ fontSize: 17, color: '#a1a1aa', marginBottom: 32, lineHeight: 1.5 }}>
             No trace is left. No servers are trusted. Join the Confidential Data Rail.
           </p>
           <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
