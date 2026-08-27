@@ -138,7 +138,7 @@ const ACCENT_GLOW = 'rgba(0, 102, 204, 0.15)'
 const BG_DARK = '#fdfdfd' // Ink / Dark Tile
 const BG_CARD = '#1a1a1a' // Pure White Canvas
 const BG_SURFACE = '#111111' // Parchment Off-White
-const BORDER = '1px solid #e0e0e0' // Hairline
+const BORDER = '1px solid #222222' // Hairline
 const BORDER_ACCENT = '1px solid #fdfdfd'
 const TEXT = {
   primary: '#fdfdfd', // Near-Black
@@ -314,124 +314,218 @@ const fmt = {
    §8  ATMOSPHERIC VERTICAL GRID & PARTICLES
    ═══════════════════════════════════════════════════════════════════════ */
 function ParticleField() {
-  return null; // Keep background pristine
+  return null;
 }
 
 function InfinityLine() {
-  return null; // Keep background pristine
+  return null;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   §9  INTERACTIVE 3D MATHEMATICAL SHARDS ORBIT SVG
+   §9  VOID DISSOLVE — DATA FRAGMENTATION VISUALIZER
    ═══════════════════════════════════════════════════════════════════════ */
-interface Node3D { id: number; x: number; y: number; z: number }
 
 function ShardSphere3D({ progress, phase }: { progress: number; phase: string }) {
-  const [nodes, setNodes] = useState<Node3D[]>([])
-  const angleRef = useRef(0)
-  const [projected, setProjected] = useState<{ id: number; x: number; y: number; sz: number; active: boolean }[]>([])
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const frameRef = useRef(0)
+  const timeRef = useRef(0)
+  const particlesRef = useRef<Array<{
+    baseX: number; baseY: number;
+    x: number; y: number;
+    vx: number; vy: number;
+    size: number; rotation: number;
+    rotSpeed: number; delay: number;
+    opacity: number; dissolved: boolean;
+  }>>([])
 
+  // Initialize particles as a structured grid
   useEffect(() => {
-    const temp: Node3D[] = []
-    const count = 10
-    for (let i = 0; i < count; i++) {
-      const y = 1 - (i / (count - 1)) * 2
-      const radius = Math.sqrt(1 - y * y)
-      const goldenAngle = Math.PI * (3 - Math.sqrt(5))
-      const theta = i * goldenAngle
-      const x = Math.cos(theta) * radius
-      const z = Math.sin(theta) * radius
-      temp.push({ id: i + 1, x, y, z })
+    const particles: typeof particlesRef.current = []
+    const gridSize = 4
+    const cellSize = 28
+    const offsetX = 140 - (gridSize * cellSize) / 2
+    const offsetY = 140 - (gridSize * cellSize) / 2
+
+    for (let row = 0; row < gridSize; row++) {
+      for (let col = 0; col < gridSize; col++) {
+        // Skip some cells to create an interesting shape (cross/diamond pattern)
+        const dist = Math.abs(row - 1.5) + Math.abs(col - 1.5)
+        if (dist > 3) continue
+
+        const bx = offsetX + col * cellSize + cellSize / 2
+        const by = offsetY + row * cellSize + cellSize / 2
+        const angle = Math.atan2(by - 140, bx - 140)
+        const speed = 0.3 + Math.random() * 0.6
+
+        particles.push({
+          baseX: bx, baseY: by,
+          x: bx, y: by,
+          vx: Math.cos(angle + (Math.random() - 0.5) * 1.2) * speed,
+          vy: Math.sin(angle + (Math.random() - 0.5) * 1.2) * speed,
+          size: 8 + Math.random() * 6,
+          rotation: Math.random() * Math.PI * 2,
+          rotSpeed: (Math.random() - 0.5) * 0.04,
+          delay: dist * 0.12 + Math.random() * 0.1,
+          opacity: 1,
+          dissolved: false,
+        })
+      }
     }
-    setNodes(temp)
+    particlesRef.current = particles
   }, [])
 
   useEffect(() => {
-    let frame: number
-    const activeThreshold = Math.min(10, Math.round((progress / 100) * 10))
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = 280 * dpr
+    canvas.height = 280 * dpr
+    ctx.scale(dpr, dpr)
+
+    const isIdle = phase === 'idle'
+    const isComplete = phase === 'complete'
+    const isFailed = phase === 'failed'
+    const dissolveAmount = isIdle ? 0 : Math.min(1, progress / 100)
 
     const animate = () => {
-      angleRef.current += 0.012
-      const cosA = Math.cos(angleRef.current)
-      const sinA = Math.sin(angleRef.current)
+      timeRef.current += 0.016
+      const t = timeRef.current
+      ctx.clearRect(0, 0, 280, 280)
 
-      const rotated = nodes.map(n => {
-        const x1 = n.x * cosA - n.z * sinA
-        const z1 = n.x * sinA + n.z * cosA
-        const cosT = Math.cos(0.35)
-        const sinT = Math.sin(0.35)
-        const y2 = n.y * cosT - z1 * sinT
-        const z2 = n.y * sinT + z1 * cosT
+      const particles = particlesRef.current
+      const accentR = isComplete ? 16 : isFailed ? 239 : 253
+      const accentG = isComplete ? 185 : isFailed ? 68 : 253
+      const accentB = isComplete ? 129 : isFailed ? 68 : 253
 
-        const scaleFactor = 100
-        const distance = 2.4
-        const factor = scaleFactor / (distance + z2)
-        const px = x1 * factor + 150
-        const py = y2 * factor + 150
-        const sz = factor * 0.15
+      // Draw subtle grid lines in background
+      ctx.strokeStyle = 'rgba(51, 51, 51, 0.4)'
+      ctx.lineWidth = 0.5
+      for (let i = 0; i < 280; i += 28) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 280); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(280, i); ctx.stroke()
+      }
 
-        return {
-          id: n.id,
-          x: px,
-          y: py,
-          sz: Math.max(3, sz),
-          active: phase !== 'idle' && n.id <= activeThreshold,
+      // Center void circle (always present)
+      const pulseR = 18 + Math.sin(t * 2) * 3
+      const gradient = ctx.createRadialGradient(140, 140, 0, 140, 140, pulseR + 20)
+      gradient.addColorStop(0, `rgba(${accentR}, ${accentG}, ${accentB}, 0.08)`)
+      gradient.addColorStop(0.5, `rgba(${accentR}, ${accentG}, ${accentB}, 0.03)`)
+      gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
+      ctx.fillStyle = gradient
+      ctx.beginPath(); ctx.arc(140, 140, pulseR + 20, 0, Math.PI * 2); ctx.fill()
+
+      // Draw connection lines from center to each particle
+      for (const p of particles) {
+        const effectiveDissolve = Math.max(0, Math.min(1, (dissolveAmount - p.delay) / (1 - p.delay)))
+
+        if (effectiveDissolve > 0 && effectiveDissolve < 1 && !isIdle) {
+          const lx = p.baseX + (p.vx * effectiveDissolve * 180)
+          const ly = p.baseY + (p.vy * effectiveDissolve * 180)
+          const lineOp = Math.max(0, 0.15 * (1 - effectiveDissolve))
+          ctx.strokeStyle = `rgba(${accentR}, ${accentG}, ${accentB}, ${lineOp})`
+          ctx.lineWidth = 0.5
+          ctx.setLineDash([2, 4])
+          ctx.beginPath(); ctx.moveTo(140, 140); ctx.lineTo(lx, ly); ctx.stroke()
+          ctx.setLineDash([])
         }
-      })
+      }
 
-      setProjected(rotated)
-      frame = requestAnimationFrame(animate)
+      // Draw each data fragment
+      for (const p of particles) {
+        const effectiveDissolve = isIdle ? 0 : isComplete ? 0 : Math.max(0, Math.min(1, (dissolveAmount - p.delay) / (1 - p.delay)))
+
+        let px: number, py: number, opacity: number, rot: number
+
+        if (isIdle || isComplete) {
+          // Assembled state: gentle floating
+          const floatX = Math.sin(t * 0.8 + p.baseX * 0.1) * 2
+          const floatY = Math.cos(t * 0.6 + p.baseY * 0.1) * 2
+          px = p.baseX + floatX
+          py = p.baseY + floatY
+          opacity = isComplete ? 1 : 0.7 + Math.sin(t + p.baseX) * 0.3
+          rot = Math.sin(t * 0.3 + p.delay * 10) * 0.1
+        } else {
+          // Dissolving: fragments scatter outward
+          px = p.baseX + p.vx * effectiveDissolve * 180
+          py = p.baseY + p.vy * effectiveDissolve * 180
+          opacity = Math.max(0, 1 - effectiveDissolve * 1.2)
+          rot = p.rotation + effectiveDissolve * p.rotSpeed * 60
+        }
+
+        if (opacity <= 0) continue
+
+        ctx.save()
+        ctx.translate(px, py)
+        ctx.rotate(rot)
+        ctx.globalAlpha = opacity
+
+        // Fragment body — sharp rectangles
+        const half = p.size / 2
+        ctx.fillStyle = isComplete
+          ? `rgba(${accentR}, ${accentG}, ${accentB}, 0.15)`
+          : 'rgba(253, 253, 253, 0.06)'
+        ctx.strokeStyle = `rgba(${accentR}, ${accentG}, ${accentB}, ${isIdle ? 0.2 : 0.4 + effectiveDissolve * 0.4})`
+        ctx.lineWidth = 1
+        ctx.fillRect(-half, -half, p.size, p.size)
+        ctx.strokeRect(-half, -half, p.size, p.size)
+
+        // Inner data line pattern
+        ctx.strokeStyle = `rgba(${accentR}, ${accentG}, ${accentB}, ${0.1 + (isIdle ? 0 : effectiveDissolve * 0.2)})`
+        ctx.lineWidth = 0.5
+        for (let li = -half + 3; li < half; li += 3) {
+          ctx.beginPath()
+          ctx.moveTo(-half + 1, li)
+          ctx.lineTo(-half + 1 + (p.size - 2) * (0.3 + Math.sin(li + t) * 0.3), li)
+          ctx.stroke()
+        }
+
+        ctx.restore()
+      }
+
+      // Center void symbol (∅)
+      ctx.globalAlpha = 1
+      ctx.fillStyle = '#060606'
+      ctx.beginPath(); ctx.arc(140, 140, 22, 0, Math.PI * 2); ctx.fill()
+      ctx.strokeStyle = `rgba(${accentR}, ${accentG}, ${accentB}, 0.6)`
+      ctx.lineWidth = 1.5
+      ctx.beginPath(); ctx.arc(140, 140, 22, 0, Math.PI * 2); ctx.stroke()
+
+      // Center text
+      ctx.fillStyle = `rgb(${accentR}, ${accentG}, ${accentB})`
+      ctx.font = '700 10px "Poppins", sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      const label = isComplete ? '✓' : isFailed ? '✗' : !isIdle ? `${Math.round(progress)}%` : '∅'
+      ctx.fillText(label, 140, 141)
+
+      // Outer ring pulse
+      if (!isIdle) {
+        const ringOpacity = 0.1 + Math.sin(t * 3) * 0.05
+        ctx.strokeStyle = `rgba(${accentR}, ${accentG}, ${accentB}, ${ringOpacity})`
+        ctx.lineWidth = 1
+        ctx.beginPath(); ctx.arc(140, 140, 60 + Math.sin(t * 1.5) * 5, 0, Math.PI * 2); ctx.stroke()
+      }
+
+      frameRef.current = requestAnimationFrame(animate)
     }
 
-    if (nodes.length > 0) {
-      frame = requestAnimationFrame(animate)
-    }
-    return () => cancelAnimationFrame(frame)
-  }, [nodes, progress, phase])
-
-  const centerNode = { x: 150, y: 150 }
-  const isComplete = phase === 'complete'
-  const accentColor = isComplete ? '#10b981' : '#fdfdfd'
+    frameRef.current = requestAnimationFrame(animate)
+    return () => cancelAnimationFrame(frameRef.current)
+  }, [progress, phase])
 
   return (
     <div style={{ position: 'relative', width: 280, height: 280, margin: '0 auto' }}>
-      <svg viewBox="0 0 300 300" style={{ width: '100%', height: '100%', display: 'block' }}>
-        <circle cx="150" cy="150" r="130" fill="none" stroke="#e0e0e0" strokeWidth="1" strokeDasharray="3 9" />
-        {projected.map((n, i) => {
-          if (!n.active) return null
-          return (
-            <line
-              key={`line-${i}`}
-              x1={centerNode.x}
-              y1={centerNode.y}
-              x2={n.x}
-              y2={n.y}
-              stroke={n.active ? `${accentColor}40` : '#e0e0e0'}
-              strokeWidth={n.active ? 1.2 : 0.5}
-              strokeDasharray={isComplete ? '0' : '3 3'}
-            />
-          )
-        })}
-        <ellipse cx="150" cy="150" rx="108" ry="42" fill="none" stroke="#f0f0f0" strokeWidth="1" transform="rotate(-15 150 150)" />
-        <ellipse cx="150" cy="150" rx="108" ry="42" fill="none" stroke="#f0f0f0" strokeWidth="1" transform="rotate(75 150 150)" />
-        <circle cx="150" cy="150" r="36" fill="#1a1a1a" stroke={phase !== 'idle' ? accentColor : '#71717a'} strokeWidth="1.5" />
-        {phase !== 'idle' && (
-          <circle cx="150" cy="150" r="44" fill="none" stroke={accentColor} strokeWidth="1" opacity="0.2" className="anim-ring" />
-        )}
-        <text x="150" y="153" textAnchor="middle" fill={phase !== 'idle' ? accentColor : '#fdfdfd'} fontSize="10" className="font-tech" style={{ fontWeight: 500 }}>
-          {isComplete ? 'SECURE' : phase === 'failed' ? 'ERROR' : phase !== 'idle' ? `${progress}%` : 'LOCK'}
-        </text>
-        {projected.map((n, i) => (
-          <g key={`node-${i}`}>
-            {n.active && <circle cx={n.x} cy={n.y} r={n.sz + 6} fill={`${accentColor}10`} />}
-            <circle cx={n.x} cy={n.y} r={n.sz} fill="#1a1a1a" stroke={n.active ? accentColor : '#333333'} strokeWidth={n.active ? 1.8 : 0.8} />
-            {n.active && <text x={n.x} y={n.y - 12} textAnchor="middle" fill={accentColor} fontSize="7" className="font-tech">S{n.id}</text>}
-          </g>
-        ))}
-      </svg>
+      <canvas
+        ref={canvasRef}
+        style={{ width: 280, height: 280, display: 'block' }}
+      />
     </div>
   )
 }
+
 
 /* ═══════════════════════════════════════════════════════════════════════
    §10  3D CARD ROTATION COMPONENT (APPLE CLEAN CHASSIS)
@@ -757,18 +851,18 @@ function WalletButton({ onConnect, onDisconnect }: { onConnect?: (a: string) => 
           right: 0,
           top: 36,
           width: 280,
-          border: '1px solid #e0e0e0',
+          border: '1px solid #222222',
           borderRadius: '14px',
           zIndex: 200,
           boxShadow: `rgba(0, 0, 0, 0.08) 0px 8px 24px`,
           overflow: 'hidden',
         }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid #e0e0e0' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid #222222' }}>
             <div className="font-tech" style={{ fontSize: 10, color: '#71717a', marginBottom: 6 }}>CONNECTED ADDRESS</div>
             <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#fdfdfd', wordBreak: 'break-all', marginBottom: 6 }}>{address}</div>
             <div style={{ fontSize: 11, color: wrongChain ? '#f43f5e' : '#7a7a7a' }}>{chain?.name ?? 'Unknown chain'}</div>
             {balanceData && (
-              <div style={{ marginTop: 10, padding: '8px 12px', background: '#fafafc', borderRadius: 8, border: '1px solid #e0e0e0' }}>
+              <div style={{ marginTop: 10, padding: '8px 12px', background: '#111111', borderRadius: 8, border: '1px solid #222222' }}>
                 <span className="font-tech" style={{ fontSize: 9, color: '#71717a' }}>BALANCE&nbsp;&nbsp;</span>
                 <span style={{ fontFamily: 'monospace', fontSize: 13, color: '#fdfdfd', fontWeight: 600 }}>
                   {parseFloat(balanceData.formatted).toFixed(4)} {balanceData.symbol}
@@ -791,7 +885,7 @@ function WalletButton({ onConnect, onDisconnect }: { onConnect?: (a: string) => 
               rel="noopener noreferrer"
               onClick={() => setOpen(false)}
               className="font-tech"
-              style={{ width: '100%', padding: '9px 12px', background: 'transparent', border: '1px solid #e0e0e0', fontSize: 11, color: '#fdfdfd', cursor: 'pointer', textAlign: 'center', textDecoration: 'none', display: 'block', borderRadius: 8 }}
+              style={{ width: '100%', padding: '9px 12px', background: 'transparent', border: '1px solid #222222', fontSize: 11, color: '#fdfdfd', cursor: 'pointer', textAlign: 'center', textDecoration: 'none', display: 'block', borderRadius: 8 }}
             >EXPLORER DETAILS ↗</a>
             <button onClick={() => { disconnect(); setOpen(false); toast.info('Wallet disconnected') }} className="font-tech" style={{ width: '100%', padding: '9px 12px', background: 'transparent', border: '1px solid #fdfdfd', fontSize: 11, color: '#fdfdfd', cursor: 'pointer', textAlign: 'center', borderRadius: 8 }}>DISCONNECT</button>
           </div>
@@ -1234,7 +1328,7 @@ function AssetModal({ asset, walletAddress, onClose, onLicensed }: { asset: Asse
     }} onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={{
         background: '#1a1a1a',
-        border: '1px solid #e0e0e0',
+        border: '1px solid #222222',
         borderRadius: 18,
         width: '100%',
         maxWidth: 580,
@@ -1244,7 +1338,7 @@ function AssetModal({ asset, walletAddress, onClose, onLicensed }: { asset: Asse
         position: 'relative',
       }}>
         {/* Modal Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #e0e0e0' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #222222' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ width: 44, height: 44, background: '#111111', border: '1px solid #333333', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
               {fmt.icon(asset.mimeType)}
@@ -1268,14 +1362,14 @@ function AssetModal({ asset, walletAddress, onClose, onLicensed }: { asset: Asse
               ['CREATOR IDENTITY', fmt.addr(asset.creatorWallet), undefined],
               ['SECURED DATE', fmt.date(asset.registeredAt), undefined]
             ].map(([l, v, c]) => (
-              <div key={l} style={{ background: '#111111', border: '1px solid #e0e0e0', borderRadius: 10, padding: '12px 16px' }}>
+              <div key={l} style={{ background: '#111111', border: '1px solid #222222', borderRadius: 10, padding: '12px 16px' }}>
                 <div className="font-tech" style={{ fontSize: 9, color: '#71717a', marginBottom: 4 }}>{l}</div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: c || '#fdfdfd' }}>{v}</div>
               </div>
             ))}
           </div>
 
-          <div style={{ background: '#111111', border: '1px solid #e0e0e0', borderRadius: 10, padding: 18, marginBottom: 24 }}>
+          <div style={{ background: '#111111', border: '1px solid #222222', borderRadius: 10, padding: 18, marginBottom: 24 }}>
             <div className="font-tech" style={{ fontSize: 10, color: '#fdfdfd', marginBottom: 10, fontWeight: 600 }}>CRYPTOGRAPHIC METADATA</div>
             <div className="font-tech" style={{ fontSize: 10, color: '#a1a1aa', display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div>➔ STORAGE PROTOCOL: SHAMIR SECRET SHARING SSS (10 PIECES)</div>
@@ -1291,7 +1385,7 @@ function AssetModal({ asset, walletAddress, onClose, onLicensed }: { asset: Asse
           </div>
 
           {/* Dynamic Rotation Control Panel */}
-          <div style={{ background: '#111111', border: '1px solid #e0e0e0', borderRadius: 10, padding: 18, marginBottom: 24 }}>
+          <div style={{ background: '#111111', border: '1px solid #222222', borderRadius: 10, padding: 18, marginBottom: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <div className="font-tech" style={{ fontSize: 10, color: '#fdfdfd', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span className="anim-pulse" style={{ width: 8, height: 8, background: '#10b981', borderRadius: '50%', display: 'inline-block' }} />
@@ -1329,7 +1423,7 @@ function AssetModal({ asset, walletAddress, onClose, onLicensed }: { asset: Asse
             )}
 
             {reshuffling && (
-              <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, width: '100%', overflow: 'hidden', marginBottom: 12 }}>
+              <div style={{ background: '#222222', borderRadius: 4, height: 6, width: '100%', overflow: 'hidden', marginBottom: 12 }}>
                 <div style={{ background: '#fdfdfd', height: '100%', width: `${reshuffleProg}%`, transition: 'width 0.3s ease' }} />
               </div>
             )}
@@ -1354,7 +1448,7 @@ function AssetModal({ asset, walletAddress, onClose, onLicensed }: { asset: Asse
 
           {/* Action Trigger Flow */}
           {!walletAddress ? (
-            <div style={{ padding: 16, background: '#111111', border: '1px solid #e0e0e0', borderRadius: 10, textAlign: 'center' }}>
+            <div style={{ padding: 16, background: '#111111', border: '1px solid #222222', borderRadius: 10, textAlign: 'center' }}>
               <div className="font-tech" style={{ fontSize: 11, color: '#71717a' }}>CONNECT WALLET TO START AUTHORIZATION</div>
             </div>
           ) : licState === 'checking' ? (
@@ -1381,14 +1475,14 @@ function AssetModal({ asset, walletAddress, onClose, onLicensed }: { asset: Asse
 
               {/* Multi-sig Approvals Gatherer panel */}
               {asset.isTeamIP && asset.teamSettings && reconState === 'idle' && !dlUrl && (
-                <div style={{ background: '#111111', border: '1px solid #e0e0e0', borderRadius: 12, padding: 18, marginBottom: 20 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e0e0e0', paddingBottom: 10, marginBottom: 12 }}>
+                <div style={{ background: '#111111', border: '1px solid #222222', borderRadius: 12, padding: 18, marginBottom: 20 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #222222', paddingBottom: 10, marginBottom: 12 }}>
                     <span className="font-tech" style={{ fontSize: 11, color: '#fdfdfd', fontWeight: 600 }}>SIGNATURES REGISTERED</span>
                     <span className="font-tech" style={{ fontSize: 11, color: '#fdfdfd', fontWeight: 600 }}>{signatures.length} / {asset.teamSettings.threshold}</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14, maxHeight: 100, overflowY: 'auto' }}>
                     {asset.teamSettings.coSigners.map((signer, idx) => (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: '#1a1a1a', border: '1px solid #e0e0e0', borderRadius: 8 }}>
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: '#1a1a1a', border: '1px solid #222222', borderRadius: 8 }}>
                         <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#a1a1aa' }}>{signer}</span>
                         <span className="font-tech" style={{ fontSize: 9, color: '#fdfdfd', fontWeight: 500 }}>CO-SIGNER #{idx + 1}</span>
                       </div>
@@ -1408,10 +1502,10 @@ function AssetModal({ asset, walletAddress, onClose, onLicensed }: { asset: Asse
                     </div>
                   </div>
                   {signatures.length > 0 && (
-                    <div style={{ borderTop: '1px solid #e0e0e0', marginTop: 12, paddingTop: 10 }}>
+                    <div style={{ borderTop: '1px solid #222222', marginTop: 12, paddingTop: 10 }}>
                       <div className="font-tech" style={{ fontSize: 10, color: '#71717a', marginBottom: 6 }}>CAPTURED KEYS:</div>
                       {signatures.map((sig, idx) => (
-                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: '#1a1a1a', border: '1px solid #e0e0e0', borderRadius: 6, marginBottom: 4 }}>
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: '#1a1a1a', border: '1px solid #222222', borderRadius: 6, marginBottom: 4 }}>
                           <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#a1a1aa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '85%' }}>{sig}</span>
                           <button onClick={() => setSignatures(prev => prev.filter((_, i) => i !== idx))} style={{ background: 'transparent', border: 'none', color: '#71717a', cursor: 'pointer', fontSize: 12 }}>×</button>
                         </div>
@@ -1497,7 +1591,7 @@ function Home({ setPage, assets }: { setPage: (p: string) => void; assets: Asset
         alignItems: 'center',
         overflow: 'hidden',
         background: '#1a1a1a',
-        borderBottom: '1px solid #e0e0e0',
+        borderBottom: '1px solid #222222',
       }}>
         <div style={{
           position: 'relative',
@@ -1512,7 +1606,7 @@ function Home({ setPage, assets }: { setPage: (p: string) => void; assets: Asset
           <div className="grid-hero">
             {/* Left Content */}
             <div>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: '6px 14px', borderRadius: 99, background: '#111111', border: '1px solid #e0e0e0', marginBottom: 28 }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: '6px 14px', borderRadius: 99, background: '#111111', border: '1px solid #222222', marginBottom: 28 }}>
                 <span className="anim-pulse" style={{ width: 6, height: 6, background: '#fdfdfd', borderRadius: '50%' }} />
                 <span className="font-tech" style={{ fontSize: 10, color: '#fdfdfd', letterSpacing: '0.15em', fontWeight: 600 }}>NULLVAULT CORE v2.0</span>
               </div>
@@ -1547,7 +1641,7 @@ function Home({ setPage, assets }: { setPage: (p: string) => void; assets: Asset
       </section>
 
       {/* Stats Bar */}
-      <section style={{ background: '#111111', borderBottom: '1px solid #e0e0e0', padding: '40px 24px' }}>
+      <section style={{ background: '#111111', borderBottom: '1px solid #222222', padding: '40px 24px' }}>
         <div className="grid-stats" style={{ maxWidth: 1024, margin: '0 auto' }}>
           {[
             ['Security Threshold', 'K = 6', '#fdfdfd'],
@@ -1568,7 +1662,7 @@ function Home({ setPage, assets }: { setPage: (p: string) => void; assets: Asset
         {steps.map((s, idx) => {
           const isDark = s.bg === '#fdfdfd'
           return (
-            <div key={idx} style={{ background: s.bg, color: s.text, borderBottom: '1px solid #e0e0e0', padding: '80px 24px' }}>
+            <div key={idx} style={{ background: s.bg, color: s.text, borderBottom: '1px solid #222222', padding: '80px 24px' }}>
               <div className="grid-spec" style={{ maxWidth: 1024, margin: '0 auto' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
                   <div className="font-tech" style={{ fontSize: 64, fontWeight: 700, color: s.numColor, opacity: 0.8, letterSpacing: '-0.05em' }}>{s.n}</div>
@@ -1817,7 +1911,7 @@ function VaultPage({
       <div style={{
         maxWidth: 480,
         width: '100%',
-        border: '1px solid #e0e0e0',
+        border: '1px solid #222222',
         borderRadius: 18,
         padding: '48px 32px',
         textAlign: 'center',
@@ -1881,8 +1975,8 @@ function VaultPage({
 
         {/* Tab 1: Upload Control Form */}
         {tab === 'upload' && (
-          <div style={{ background: '#1a1a1a', border: '1px solid #e0e0e0', borderRadius: 18, padding: 32, boxShadow: 'rgba(0, 0, 0, 0.02) 0px 4px 16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e0e0e0', paddingBottom: 16, marginBottom: 28 }}>
+          <div style={{ background: '#1a1a1a', border: '1px solid #222222', borderRadius: 18, padding: 32, boxShadow: 'rgba(0, 0, 0, 0.02) 0px 4px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #222222', paddingBottom: 16, marginBottom: 28 }}>
               <h3 className="font-tech" style={{ color: '#fdfdfd', fontSize: 12, fontWeight: 600 }}>SECURE SHAMIR VAULT REGISTRATION</h3>
               <span className="font-tech" style={{ fontSize: 10, color: '#71717a' }}>TECTONIC CDR LAYER</span>
             </div>
@@ -1917,7 +2011,7 @@ function VaultPage({
             {step === 'meta' && file && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                 {/* File spec details card */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px', background: '#111111', border: '1px solid #e0e0e0', borderRadius: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px', background: '#111111', border: '1px solid #222222', borderRadius: 12 }}>
                   <span style={{ fontSize: 22 }}>{fmt.icon(file.type)}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: '#fdfdfd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</div>
@@ -1974,7 +2068,7 @@ function VaultPage({
                 </div>
 
                 {/* Team Multi-sig switch options */}
-                <div style={{ background: '#111111', border: '1px solid #e0e0e0', borderRadius: 12, padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ background: '#111111', border: '1px solid #222222', borderRadius: 12, padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
                       <span className="font-tech" style={{ fontSize: 12, color: '#fdfdfd', fontWeight: 600 }}>LOCK MODE: TEAM MULTI-SIGNATURE APPROVAL</span>
@@ -1989,7 +2083,7 @@ function VaultPage({
                   </div>
 
                   {form.isTeamIP && (
-                    <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div style={{ borderTop: '1px solid #222222', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
                       <div>
                         <div className="font-tech" style={{ fontSize: 10, color: '#a1a1aa', marginBottom: 8, fontWeight: 600 }}>CO-SIGNER ADDRESSES (COMMA-SEPARATED)</div>
                         <textarea
@@ -2058,7 +2152,7 @@ function VaultPage({
                 </p>
 
                 <div style={{
-                  background: '#111111', border: '1px solid #e0e0e0', borderRadius: 12,
+                  background: '#111111', border: '1px solid #222222', borderRadius: 12,
                   padding: '16px 20px', marginBottom: 28, textAlign: 'left',
                 }}>
                   {[
@@ -2067,7 +2161,7 @@ function VaultPage({
                     ['GAS FEES', 'Paid by connected wallet'],
                     ['SIGNER', walletAddress ? fmt.addr(walletAddress) : '—'],
                   ].map(([label, val]) => (
-                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #e0e0e0' }}>
+                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #222222' }}>
                       <span className="font-tech" style={{ fontSize: 10, color: '#71717a', fontWeight: 600 }}>{label}</span>
                       <span style={{ fontSize: 13, color: '#fdfdfd', fontFamily: 'monospace', fontWeight: 500 }}>{val}</span>
                     </div>
@@ -2090,14 +2184,14 @@ function VaultPage({
                 <h3 className="font-display" style={{ fontSize: 21, color: '#fdfdfd', marginBottom: 8, fontWeight: 600 }}>IP Archive Established</h3>
                 <p className="font-body-light" style={{ fontSize: 15, color: '#a1a1aa', marginBottom: 24 }}>Plaintext discarded. Secure shards distributed into void.</p>
                 
-                <div style={{ background: '#111111', border: '1px solid #e0e0e0', borderRadius: 12, padding: '4px 20px', marginBottom: 28, textAlign: 'left' }}>
+                <div style={{ background: '#111111', border: '1px solid #222222', borderRadius: 12, padding: '4px 20px', marginBottom: 28, textAlign: 'left' }}>
                   {[
                     ['IP ASSET TITLE', doneAsset.title],
                     ['ON-CHAIN IP ID', doneAsset.ipId, true],
                     ['MINT TRANSACTION', doneAsset.txHash, true],
                     ['TEE RECONSTRUCT MAP', doneAsset.locationMapCid, true],
                   ].map(([label, val, mono]) => (
-                    <div key={label as string} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #e0e0e0' }}>
+                    <div key={label as string} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #222222' }}>
                       <span className="font-tech" style={{ fontSize: 10, color: '#71717a', fontWeight: 600 }}>{label as string}</span>
                       <span style={{ fontSize: 13, fontFamily: mono ? 'monospace' : undefined, color: '#fdfdfd', fontWeight: 500 }}>{mono ? fmt.hash(val as string) : val}</span>
                     </div>
@@ -2121,7 +2215,7 @@ function VaultPage({
               <span className="font-tech" style={{ fontSize: 11, color: '#71717a', fontWeight: 500 }}>RETRIEVING ASSET INDICES...</span>
             </div>
           ) : myAssets.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '60px 24px', border: '1px solid #e0e0e0', borderRadius: 18, background: '#1a1a1a' }}>
+            <div style={{ textAlign: 'center', padding: '60px 24px', border: '1px solid #222222', borderRadius: 18, background: '#1a1a1a' }}>
               <div style={{ fontSize: 36, opacity: 0.3, marginBottom: 14 }}>🗂</div>
               <h4 className="font-display" style={{ fontSize: 18, color: '#fdfdfd', marginBottom: 6, fontWeight: 500 }}>Directory Empty</h4>
               <p className="font-body-light" style={{ fontSize: 14, color: '#71717a', marginBottom: 20 }}>No intellectual properties registered on this account.</p>
@@ -2144,7 +2238,7 @@ function VaultPage({
               <span className="font-tech" style={{ fontSize: 11, color: '#71717a', fontWeight: 500 }}>SYNCHRONIZING ACCESS TOKENS...</span>
             </div>
           ) : licenses.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '60px 24px', border: '1px solid #e0e0e0', borderRadius: 18, background: '#1a1a1a' }}>
+            <div style={{ textAlign: 'center', padding: '60px 24px', border: '1px solid #222222', borderRadius: 18, background: '#1a1a1a' }}>
               <div style={{ fontSize: 36, opacity: 0.3, marginBottom: 14 }}>🔑</div>
               <h4 className="font-display" style={{ fontSize: 18, color: '#fdfdfd', marginBottom: 6, fontWeight: 500 }}>No Licenses Held</h4>
               <p className="font-body-light" style={{ fontSize: 14, color: '#71717a' }}>Browse the Explore catalog to purchase standard PIL terms.</p>
@@ -2157,12 +2251,12 @@ function VaultPage({
                   return a ? <AssetCard key={l.id} asset={a} licensed onClick={() => setSelAsset(a)} /> : null
                 })}
               </div>
-              <div style={{ border: '1px solid #e0e0e0', borderRadius: 18, padding: 24, background: '#1a1a1a' }}>
+              <div style={{ border: '1px solid #222222', borderRadius: 18, padding: 24, background: '#1a1a1a' }}>
                 <div className="font-tech" style={{ fontSize: 11, color: '#fdfdfd', marginBottom: 18, fontWeight: 600 }}>AUTHORIZED LICENSE CONTRACT RECEIPTS</div>
                 {licenses.map(l => {
                   const a = allAssets.find(x => x.id === l.ipAssetId)
                   return a ? (
-                    <div key={l.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #e0e0e0' }}>
+                    <div key={l.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #222222' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                         <span style={{ fontSize: 18 }}>{fmt.icon(a.mimeType)}</span>
                         <div>
@@ -2300,7 +2394,7 @@ function ExplorePage({
             <span className="font-tech" style={{ fontSize: 11, color: '#71717a', fontWeight: 500 }}>POLLING STORY CONTRACT REGISTRY...</span>
           </div>
         ) : filtered.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '80px 24px', border: '1px solid #e0e0e0', borderRadius: 18, background: '#1a1a1a' }}>
+          <div style={{ textAlign: 'center', padding: '80px 24px', border: '1px solid #222222', borderRadius: 18, background: '#1a1a1a' }}>
             <div style={{ fontSize: 44, opacity: 0.3, marginBottom: 14 }}>🔍</div>
             <h4 className="font-display" style={{ fontSize: 18, color: '#fdfdfd', marginBottom: 6, fontWeight: 500 }}>No results found</h4>
             <p className="font-body-light" style={{ fontSize: 14, color: '#71717a' }}>Try adjusting your search queries or filter categories.</p>
